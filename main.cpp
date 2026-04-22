@@ -121,14 +121,58 @@ void got_want_pair(const global_data_type &got, const global_data_type &want, co
       [&] { open_ofstream(ROOT, name, timestep, "want") << serde::serialize_global_data(&want) << std::endl; });
 }
 
+static std::vector<int> parse_csv_ints(std::string_view s) {
+  std::vector<int> out;
+  std::string token;
+  std::istringstream iss{std::string(s)};
+  while (std::getline(iss, token, ',')) {
+    if (!token.empty()) {
+      out.push_back(std::stoi(token));
+    }
+  }
+  return out;
+}
+
+static void print_help(const char *prog) {
+  std::cout
+      << "Usage: " << prog << " [OPTIONS] [TIMESTEP ...]\n"
+      << "\n"
+      << "Run the 4 velocity tendencies variants over one or more timesteps.\n"
+      << "\n"
+      << "Options:\n"
+      << "  --data <path>         Data root with <name>.<ts>.data files\n"
+      << "                        (default: data_r02b05)\n"
+      << "  --reps <int>          Rep count of __program_ per timestep\n"
+      << "                        (default: 20)\n"
+      << "  --timesteps a,b,c     Comma-separated timesteps to process\n"
+      << "                        (default: 1,2,7,9,43,93,463)\n"
+      << "  --output-dir <path>   got/want dump dir\n"
+      << "                        (default: ./gotwant/<basename(data)>)\n"
+      << "  -h, --help            Print this message and exit\n"
+      << "\n"
+      << "Positional args are merged into --timesteps.\n"
+      << std::endl;
+}
+
 int main(int argc, char *argv[]) {
   const flags::args args(argc, argv);
 
+  if (args.get<bool>("h", false) || args.get<bool>("help", false)) {
+    print_help(argv[0]);
+    return EXIT_SUCCESS;
+  }
   const auto root = args.get<std::string>("data", "data_r02b05");
-  const auto reps = args.get<std::string>("reps", "20");
+  const int rep = args.get<int>("reps", 20);
+  const auto timesteps_csv = args.get<std::string>("timesteps", "");
+
   const std::filesystem::path ROOT{root};
   acerr() << "Will be reading data from: " << ROOT << std::endl;
-  const std::filesystem::path DUMP = std::filesystem::current_path() / "gotwant" / ROOT.filename();
+
+  const auto dump_override = args.get<std::string>("output-dir", "");
+  const std::filesystem::path DUMP =
+      dump_override.empty()
+          ? std::filesystem::current_path() / "gotwant" / ROOT.filename()
+          : std::filesystem::path{dump_override};
   std::error_code ec;
   if (!std::filesystem::create_directories(DUMP, ec) && ec) {
     acerr() << "Failed to create directory: " << ec.message() << std::endl;
@@ -136,14 +180,16 @@ int main(int argc, char *argv[]) {
   acerr() << "Will be writing got and want files to: " << DUMP << std::endl;
 
   std::vector<int> ns;
+  if (!timesteps_csv.empty()) {
+    ns = parse_csv_ints(timesteps_csv);
+  }
+  // Positional args remain a shortcut: `./velocity_baseline 1 2 7`.
   for (const auto ts : args.positional()) {
     ns.push_back(std::stoi(std::string(ts)));
   }
   if (ns.empty()) {
     ns = {1, 2, 7, 9, 43, 93, 463};
   }
-
-  const int rep = std::stoi(reps);
 
   for (int n : ns) {
     acerr() << "Reading data for " << n << "..." << std::endl;
@@ -224,17 +270,20 @@ int main(int argc, char *argv[]) {
 
     std::cout << "MAIN PER" << std::endl;
 
-#define VT_CALL_ARGS VELOCITY_CALL_ARGS(global_data, p_diag, p_int, p_metrics, p_patch, p_prog, \
-                                         z_kin_hor_e, z_vt_ie, z_w_concorr_me,                   \
-                                         dt_linintp_ubc, dtime, istep, ldeepatmo, lvn_only, ntnd)
-
-#define VT_DISPATCH(suffix)                                                              \
-  do {                                                                                   \
-    auto *h = __dace_init_velocity_no_nproma_if_prop_##suffix(VT_CALL_ARGS);             \
-    for (int j = 0; j < rep; j++) {                                                      \
-      __program_velocity_no_nproma_if_prop_##suffix(h, VT_CALL_ARGS);                    \
-    }                                                                                    \
-    __dace_exit_velocity_no_nproma_if_prop_##suffix(h);                                  \
+#define VT_DISPATCH(suffix)                                                                              \
+  do {                                                                                                   \
+    auto *h = __dace_init_velocity_no_nproma_if_prop_##suffix(                                           \
+        VELOCITY_INIT_ARGS(global_data, p_diag, p_int, p_metrics, p_patch, p_prog,                       \
+                           z_kin_hor_e, z_vt_ie, z_w_concorr_me,                                         \
+                           dt_linintp_ubc, dtime, istep, ldeepatmo, lvn_only, ntnd));                    \
+    for (int j = 0; j < rep; j++) {                                                                      \
+      __program_velocity_no_nproma_if_prop_##suffix(                                                     \
+          h,                                                                                             \
+          VELOCITY_CALL_ARGS(global_data, p_diag, p_int, p_metrics, p_patch, p_prog,                     \
+                             z_kin_hor_e, z_vt_ie, z_w_concorr_me,                                       \
+                             dt_linintp_ubc, dtime, istep, ldeepatmo, lvn_only, ntnd));                  \
+    }                                                                                                    \
+    __dace_exit_velocity_no_nproma_if_prop_##suffix(h);                                                  \
   } while (0)
 
     if (lvn_only == 0 && istep == 1) {
@@ -250,7 +299,6 @@ int main(int argc, char *argv[]) {
     }
 
 #undef VT_DISPATCH
-#undef VT_CALL_ARGS
     acout() << "Step " << n << " done." << std::endl;
 
     pool.emplace_back([&] { got_want_pair<global_data_type>(global_data, global_data_want, "global_data", n, DUMP); });

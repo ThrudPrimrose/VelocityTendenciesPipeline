@@ -55,7 +55,7 @@ from utils.passes.resolve_extent_sizes import ResolveExtentSizes
 from utils.passes.unify_variant_signatures import unify_variant_signatures
 from utils.unique_names import unique_names
 from utils.clean_bad_views import clean_bad_views
-from specialize_vt import specialize_vt
+from utils.specialize_vt import specialize_vt
 
 
 _REPO = Path(__file__).resolve().parent
