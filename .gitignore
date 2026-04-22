@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# DaCe
+.dacecache/
+_dacegraphs/
+*.sdfg.log
+
+# Loose variant dumps produced by generate_baselines.py -- duplicates of the
+# ones in baseline/.
+variants/
+
+# Compiled runtime
+velocity_per
+*.o
+*.so
+*.a
+*.dylib
+*.dSYM/
+
+# Data (symlinked in from icon-artifacts)
+data_r02b05
+gotwant/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
