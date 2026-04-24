@@ -79,10 +79,20 @@ def OffloadVelocityToGPU(sdfg: SDFG, exclude_from_offload=()):
     # don't validate between them.
     _ensure_gpu_prefix_for_gpu_storage_arrays(sdfg)
     _reconcile_nsdfg_connector_names(sdfg)
+    # Transient promotion set GPU_Global on root-level arrays, but the
+    # matching inner descriptors inside NestedSDFG connectors (non-
+    # transient inner bindings of outer transients) still carry the
+    # stage-3 ``Default`` storage. Re-run the propagation so any inner
+    # Array whose outer memlet points at a GPU_Global descriptor
+    # inherits that storage. Without this, downstream logic that
+    # classifies "is this data on GPU?" by looking at the inner
+    # descriptor sees ``Default`` and misroutes (e.g. picks the cpu
+    # reduction backend when the data is actually on the device).
+    _propagate_gpu_storage_into_nested_sdfgs(sdfg)
     # Swap standard-library Reduce nodes for tasklets that dispatch to
     # the velocity-owned reduction helpers (CPU / GPU launch / device
-    # inline, chosen from schedule). Runs last so it sees the final
-    # storage and schedule layout produced by the preceding phases.
+    # inline, chosen from detected storage + scope). Runs last so it
+    # sees the final storage layout produced by the preceding phases.
     from utils.passes.replace_reductions_with_tasklets import \
         replace_reductions_with_tasklets
     replace_reductions_with_tasklets(sdfg)

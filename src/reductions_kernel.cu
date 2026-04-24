@@ -1,218 +1,177 @@
-#if __HIP_PLATFORM_AMD__ == 1
-#include "hip/hip_runtime.h"
+// Host-launched GPU reductions for the velocity pipeline. Single TU,
+// compiles under both nvcc (CUDA) and hipcc (ROCm/HIP) via the same
+// preprocessor shim used by ``reductions_kernel.cuh``.
+//
+// Implementation notes
+// --------------------
+// * Scalar returns use CUB's ``DeviceReduce`` to write the result into
+//   a small device-resident scratch, then ``Memcpy`` it to the host
+//   and synchronise. That round-trip is cheap relative to the
+//   reduction itself and avoids pulling thrust into the build --
+//   which keeps the thrust version-namespace warnings off the log
+//   and shaves compile time.
+// * Store variants drop the device-to-host copy entirely; the caller
+//   sees the result on the stream like any other async kernel.
+// * Temp storage (both CUB scratch and scalar outputs) is lazily
+//   allocated and grows monotonically. ``reduce_gpu_finalize`` -- the
+//   pass inserts a call into ``__dace_exit_cuda_*`` -- releases it.
+#if defined(__HIP_PLATFORM_AMD__) || defined(HIP_PLATFORM_AMD)
 #include <hip/hip_runtime.h>
 #include <hipcub/hipcub.hpp>
-#define GPU_PREFIX(name) hip##name
-#define gpuStream_t hipStream_t
-#define gpuMalloc hipMalloc
-#define gpuFree hipFree
-#define DEVICE_REDUCE hipcub::DeviceReduce
-#define LAUNCH_KERNEL(kernel, grid, block, stream, ...) \
-    hipLaunchKernelGGL(kernel, grid, block, 0, stream, __VA_ARGS__)
+typedef hipStream_t reduce_stream_t;
+#define gpuMalloc         hipMalloc
+#define gpuFree           hipFree
+#define gpuMemcpyAsync    hipMemcpyAsync
+#define gpuStreamSync     hipStreamSynchronize
+#define gpuMemcpyD2H      hipMemcpyDeviceToHost
+#define DEVICE_REDUCE     hipcub::DeviceReduce
 #else
 #include <cuda_runtime.h>
 #include <cub/cub.cuh>
-#define GPU_PREFIX(name) cuda##name
-#define gpuStream_t cudaStream_t
-#define gpuMalloc cudaMalloc
-#define gpuFree cudaFree
-#define DEVICE_REDUCE cub::DeviceReduce
-#define LAUNCH_KERNEL(kernel, grid, block, stream, ...) \
-    kernel<<<grid, block, 0, stream>>>(__VA_ARGS__)
+typedef cudaStream_t reduce_stream_t;
+#define gpuMalloc         cudaMalloc
+#define gpuFree           cudaFree
+#define gpuMemcpyAsync    cudaMemcpyAsync
+#define gpuStreamSync     cudaStreamSynchronize
+#define gpuMemcpyD2H      cudaMemcpyDeviceToHost
+#define DEVICE_REDUCE     cub::DeviceReduce
 #endif
 
-#include <thrust/reduce.h>
-#include <thrust/functional.h>
-#include <thrust/execution_policy.h>
-#include <thrust/device_vector.h>
-#include <cstdint>
+#include "reductions_kernel.cuh"
 
-////////////////////////////////////////////////////
-// Max reduction
-////////////////////////////////////////////////////
+// --- Lazy scratch buffers ----------------------------------------------
+//
+// One CUB temp storage per primitive (max / sum) -- size depends on
+// the input length, so we query CUB for the requirement and grow
+// monotonically. One device-resident scalar slot per numeric type
+// used by the scalar-return entry points so the D2H copy doesn't need
+// a fresh allocation every call.
 
-static void* maxZ_temp_storage = nullptr;
+static void*   g_cub_tmp_max = nullptr;  static size_t g_cub_tmp_max_bytes = 0;
+static void*   g_cub_tmp_sum = nullptr;  static size_t g_cub_tmp_sum_bytes = 0;
 
-void reduce_maxZ_to_address_gpu(const double *__restrict__ d_in,
-                                double *__restrict__ d_out,
-                                int size,
-                                gpuStream_t stream)
-{
-    static size_t temp_storage_bytes = 0;
-    static int last_size = -1;
+static double* g_scalar_out_double = nullptr;
+static int*    g_scalar_out_int    = nullptr;
 
-    if (size > last_size) {
-        if (maxZ_temp_storage != nullptr) {
-            gpuFree(maxZ_temp_storage);
-            maxZ_temp_storage = nullptr;
-        }
-        temp_storage_bytes = 0;
-        DEVICE_REDUCE::Max(nullptr, temp_storage_bytes, d_in, d_out, size, stream);
-        if (temp_storage_bytes != 0) {
-            gpuMalloc(&maxZ_temp_storage, temp_storage_bytes);
-        }
-        last_size = size;
-    }
-
-    DEVICE_REDUCE::Max(maxZ_temp_storage, temp_storage_bytes, d_in, d_out, size, stream);
-}
-
-void cleanup_reduce_maxZ_gpu()
-{
-    if (maxZ_temp_storage != nullptr) {
-        gpuFree(maxZ_temp_storage);
-        maxZ_temp_storage = nullptr;
+static inline void ensure_cub_tmp(void **buf, size_t *have, size_t need) {
+    if (need > *have) {
+        if (*buf) gpuFree(*buf);
+        gpuMalloc(buf, need);
+        *have = need;
     }
 }
 
-double reduce_maxZ_to_scalar_gpu(const double *__restrict__ d_in, int size, gpuStream_t stream)
-{
-    thrust::device_ptr<const double> d_ptr = thrust::device_pointer_cast(d_in);
-    return thrust::reduce(d_ptr, d_ptr + size, 0.0, thrust::maximum<double>());
+static inline double* ensure_scalar_out_double(void) {
+    if (!g_scalar_out_double) gpuMalloc(&g_scalar_out_double, sizeof(double));
+    return g_scalar_out_double;
 }
 
-////////////////////////////////////////////////////
-// Sum reduction
-////////////////////////////////////////////////////
-
-static void* sum_temp_storage = nullptr;
-
-void reduce_sum_to_address_gpu(const double *__restrict__ d_in,
-                               double *__restrict__ d_out,
-                               int size,
-                               gpuStream_t stream)
-{
-    static size_t temp_storage_bytes = 0;
-    static int last_size = -1;
-
-    if (sum_temp_storage == nullptr || size != last_size) {
-        if (sum_temp_storage != nullptr) {
-            gpuFree(sum_temp_storage);
-            sum_temp_storage = nullptr;
-        }
-        temp_storage_bytes = 0;
-        DEVICE_REDUCE::Sum(nullptr, temp_storage_bytes, d_in, d_out, size, stream);
-        if (temp_storage_bytes != 0) {
-            gpuMalloc(&sum_temp_storage, temp_storage_bytes);
-        }
-        last_size = size;
-    }
-
-    DEVICE_REDUCE::Sum(sum_temp_storage, temp_storage_bytes, d_in, d_out, size, stream);
+static inline int* ensure_scalar_out_int(void) {
+    if (!g_scalar_out_int) gpuMalloc(&g_scalar_out_int, sizeof(int));
+    return g_scalar_out_int;
 }
 
-void cleanup_reduce_sum_gpu()
-{
-    if (sum_temp_storage != nullptr) {
-        gpuFree(sum_temp_storage);
-        sum_temp_storage = nullptr;
-    }
+// --- Store variants (async on stream) ----------------------------------
+
+extern "C"
+void reduce_max_store_gpu(const double *d_in, double *d_out, int size,
+                          reduce_stream_t stream) {
+    size_t bytes = 0;
+    DEVICE_REDUCE::Max(nullptr, bytes, d_in, d_out, size, stream);
+    ensure_cub_tmp(&g_cub_tmp_max, &g_cub_tmp_max_bytes, bytes);
+    DEVICE_REDUCE::Max(g_cub_tmp_max, bytes, d_in, d_out, size, stream);
 }
 
-int reduce_sum_to_scalar_gpu(const int *__restrict__ d_in, int size, gpuStream_t stream)
-{
-    thrust::device_ptr<const int> d_ptr = thrust::device_pointer_cast(d_in);
-    return thrust::reduce(d_ptr, d_ptr + size, 0, thrust::plus<int>());
+extern "C"
+void reduce_sum_store_gpu(const int *d_in, int *d_out, int size,
+                          reduce_stream_t stream) {
+    size_t bytes = 0;
+    DEVICE_REDUCE::Sum(nullptr, bytes, d_in, d_out, size, stream);
+    ensure_cub_tmp(&g_cub_tmp_sum, &g_cub_tmp_sum_bytes, bytes);
+    DEVICE_REDUCE::Sum(g_cub_tmp_sum, bytes, d_in, d_out, size, stream);
 }
 
-////////////////////////////////////////////////////
-// Scan reduction (any-positive check)
-////////////////////////////////////////////////////
+// --- Scalar-return variants (sync on completion) -----------------------
 
-int reduce_scan_gpu(const int *__restrict__ d_in, int size, gpuStream_t stream)
-{
-    return (reduce_sum_to_scalar_gpu(d_in, size, stream) > 0) ? 1 : 0;
+extern "C"
+double reduce_max_gpu(const double *d_in, int size, reduce_stream_t stream) {
+    double *d_out = ensure_scalar_out_double();
+    reduce_max_store_gpu(d_in, d_out, size, stream);
+    double h_out;
+    gpuMemcpyAsync(&h_out, d_out, sizeof(double), gpuMemcpyD2H, stream);
+    gpuStreamSync(stream);
+    return h_out;
 }
 
-int reduce_scan_gpu(int d_in, int size, gpuStream_t stream)
-{
-    return (d_in > 0) ? 1 : 0;
+extern "C"
+int reduce_sum_gpu(const int *d_in, int size, reduce_stream_t stream) {
+    int *d_out = ensure_scalar_out_int();
+    reduce_sum_store_gpu(d_in, d_out, size, stream);
+    int h_out;
+    gpuMemcpyAsync(&h_out, d_out, sizeof(int), gpuMemcpyD2H, stream);
+    gpuStreamSync(stream);
+    return h_out;
 }
 
-////////////////////////////////////////////////////
-// Dimensional scan kernels — int
-////////////////////////////////////////////////////
-
-__global__ void kernel_reduce_scan_last_dim(const int *__restrict__ arr,
-                                            int *__restrict__ out,
-                                            int start, int end, int D, int N)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= N) return;
-
-    int acc = 0;
-    for (int d = start; d < end; d++) {
-        acc = arr[i + d * N] > 0 ? 1 : acc;
-    }
-    out[i] = acc;
+extern "C"
+int reduce_any_gpu(const int *d_in, int size, reduce_stream_t stream) {
+    // Reuse sum + threshold. Any positive input pushes the sum > 0;
+    // negative inputs don't occur in the velocity call sites (the
+    // scan is over a 0/1 mask array), so ``>0`` is exact for our
+    // callers. Keeps the scratch surface to one buffer.
+    return (reduce_sum_gpu(d_in, size, stream) > 0) ? 1 : 0;
 }
 
-__global__ void kernel_reduce_scan_first_dim(const int *__restrict__ arr,
-                                             int *__restrict__ out,
-                                             int start, int end, int D, int N)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= N) return;
+// --- Async scalar-return variants -------------------------------------
+//
+// These are the overlap-friendly versions of the scalar returns: the
+// reduction and the D2H copy both enqueue on the stream and return
+// immediately. The host-side result slot (``h_out``) is populated
+// when the stream drains, not when the function returns. A deferred
+// sync tasklet (emitted by the pass) flushes before the first
+// consumer; any GPU work enqueued between the async call and the
+// deferred sync runs concurrently with the D2H on the same stream.
 
-    int acc = 0;
-    for (int d = start; d < end; d++) {
-        acc = arr[d + i * D] > 0 ? 1 : acc;
-    }
-    out[i] = acc;
+extern "C"
+void reduce_max_async_host_gpu(const double *d_in, double *h_out,
+                               int size, reduce_stream_t stream) {
+    double *d_out = ensure_scalar_out_double();
+    reduce_max_store_gpu(d_in, d_out, size, stream);
+    gpuMemcpyAsync(h_out, d_out, sizeof(double), gpuMemcpyD2H, stream);
+    // No sync.
 }
 
-void reduce_scan_last_dim(const int *arr, int *out,
-                          int start, int end, int D, int N)
-{
-    LAUNCH_KERNEL(kernel_reduce_scan_last_dim, 1, 96, 0, arr, out, start, end, D, N);
+extern "C"
+void reduce_sum_async_host_gpu(const int *d_in, int *h_out,
+                               int size, reduce_stream_t stream) {
+    int *d_out = ensure_scalar_out_int();
+    reduce_sum_store_gpu(d_in, d_out, size, stream);
+    gpuMemcpyAsync(h_out, d_out, sizeof(int), gpuMemcpyD2H, stream);
 }
 
-void reduce_scan_first_dim(const int *arr, int *out,
-                           int start, int end, int D, int N)
-{
-    LAUNCH_KERNEL(kernel_reduce_scan_first_dim, 1, 96, 0, arr, out, start, end, D, N);
+extern "C"
+void reduce_any_async_host_gpu(const int *d_in, int *h_out,
+                               int size, reduce_stream_t stream) {
+    int *d_out = ensure_scalar_out_int();
+    reduce_sum_store_gpu(d_in, d_out, size, stream);
+    // Clamp the host-side value to {0,1} after the stream drains.
+    // The async variant doesn't synchronise, so we can only write the
+    // raw sum into ``h_out``; the tasklet site emits a ``(sum > 0)``
+    // guard post-sync for callers that need the 0/1 form.
+    gpuMemcpyAsync(h_out, d_out, sizeof(int), gpuMemcpyD2H, stream);
 }
 
-////////////////////////////////////////////////////
-// Dimensional scan kernels — uint8_t
-////////////////////////////////////////////////////
+// --- Lifecycle ---------------------------------------------------------
 
-__global__ void kernel_reduce_scan_last_dim(const uint8_t *__restrict__ arr,
-                                            uint8_t *__restrict__ out,
-                                            int start, int end, int D, int N)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= N) return;
-
-    uint8_t acc = 0;
-    for (int d = start; d < end; d++) {
-        acc = arr[i + d * N] > 0 ? 1 : acc;
-    }
-    out[i] = acc;
+extern "C" void reduce_gpu_init(void) {
+    // Intentionally empty; scratch allocs are lazy so first-use
+    // absorbs the cost. Kept as a symmetry hook for future eager
+    // allocation if we care to preheat.
 }
 
-__global__ void kernel_reduce_scan_first_dim(const uint8_t *__restrict__ arr,
-                                             uint8_t *__restrict__ out,
-                                             int start, int end, int D, int N)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= N) return;
-
-    uint8_t acc = 0;
-    for (int d = start; d < end; d++) {
-        acc = arr[d + i * D] > 0 ? 1 : acc;
-    }
-    out[i] = acc;
-}
-
-void reduce_scan_last_dim(const uint8_t *arr, uint8_t *out,
-                          int start, int end, int D, int N)
-{
-    LAUNCH_KERNEL(kernel_reduce_scan_last_dim, 1, 96, 0, arr, out, start, end, D, N);
-}
-
-void reduce_scan_first_dim(const uint8_t *arr, uint8_t *out,
-                           int start, int end, int D, int N)
-{
-    LAUNCH_KERNEL(kernel_reduce_scan_first_dim, 1, 96, 0, arr, out, start, end, D, N);
+extern "C" void reduce_gpu_finalize(void) {
+    if (g_cub_tmp_max)       { gpuFree(g_cub_tmp_max);       g_cub_tmp_max = nullptr;       g_cub_tmp_max_bytes = 0; }
+    if (g_cub_tmp_sum)       { gpuFree(g_cub_tmp_sum);       g_cub_tmp_sum = nullptr;       g_cub_tmp_sum_bytes = 0; }
+    if (g_scalar_out_double) { gpuFree(g_scalar_out_double); g_scalar_out_double = nullptr; }
+    if (g_scalar_out_int)    { gpuFree(g_scalar_out_int);    g_scalar_out_int    = nullptr; }
 }

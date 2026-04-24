@@ -58,7 +58,7 @@ STAGE_ID = 4
 # a stray copy-in/copy-out would sever the round-trip.
 _KEEP_CPU = (
     # max_vcfl_dyn: scalar-shaped output Fortran reads on the host
-    # after the SDFG returns.
+    # after the SDFG returns. it is an array.
     "__CG_p_diag__m_max_vcfl_dyn",
     # ICON patch index/block descriptor arrays. These are read
     # exclusively by host-side interstate edges (to compute
@@ -167,14 +167,12 @@ def main():
     argp = argparse.ArgumentParser()
     argp.add_argument("--optimize", action=argparse.BooleanOptionalAction, default=False)
     argp.add_argument("--compile", action=argparse.BooleanOptionalAction, default=False)
-    # Debug is the default: -O0, IEEE-compliant fp (``--fmad=false``,
-    # ``--prec-div=true``, ``--prec-sqrt=true``, ``--ftz=false``, no
-    # ``--use_fast_math``). Parallel reductions still drift at the
-    # last bit because tree-order != sequential-order, but per-op
-    # rounding matches the CPU reference. ``--release`` opts in to
-    # -O3 + fast math.
-    argp.add_argument("--release", action="store_true", default=False,
-                      help="build with -O3 + fast math (default: debug / IEEE)")
+    # Release is the default (-O3 + ``--use_fast_math``). Opt into
+    # debug with ``--debug``; debug also flips fp to IEEE-compliant
+    # (``--fmad=false``, ``--prec-div=true``, ``--prec-sqrt=true``,
+    # ``--ftz=false``), which matches the CPU reference bit-for-bit.
+    argp.add_argument("--debug", dest="release", action="store_false", default=True,
+                      help="build with -O0 + IEEE fp (default: release + fast math)")
     args = argp.parse_args()
     if not args.optimize and not args.compile:
         args.optimize, args.compile = True, True
@@ -202,12 +200,7 @@ def main():
             name: dace.SDFG.from_file(common.stage_output(name, STAGE_ID))
             for name in names
         }
-        # Velocity-owned reduction helpers. The GPU launch wrappers live
-        # in ``src/reductions_kernel.cu`` (CUB + thrust + custom scan
-        # kernels); the CPU OpenMP fallbacks in ``src/reductions.cpp``.
-        # Included here so every stage-4 link resolves
-        # ``reduce_{maxZ,scan,sum}_{cpu,gpu,device}`` from the tasklets
-        # that ``replace_reductions_with_tasklets`` emits.
+        # Velocity-owned reduction helpers.
         extra_sources = ["src/reductions.cpp", "src/reductions_kernel.cu"]
         extra_include_dirs = ["include"]
         common.compile_action(STAGE_ID, sdfgs, gpu=True, release=args.release,

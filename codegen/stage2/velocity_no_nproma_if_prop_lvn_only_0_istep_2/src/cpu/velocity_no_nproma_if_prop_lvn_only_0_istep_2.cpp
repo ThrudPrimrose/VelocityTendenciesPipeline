@@ -411,10 +411,10 @@ inline void reduce_30_1_26(velocity_no_nproma_if_prop_lvn_only_0_istep_2_state_t
     {
 
         {
-            for (auto _i0 = 0; _i0 < 91; _i0 += 1) {
-                for (auto _i1 = 0; _i1 < __CG_global_data__m_nproma; _i1 += 1) {
+            for (auto _i0 = 0; _i0 < __CG_global_data__m_nproma; _i0 += 1) {
+                for (auto _i1 = 0; _i1 < 91; _i1 += 1) {
                     {
-                        double __inp = _in[((__CG_global_data__m_nproma * _i0) + _i1)];
+                        double __inp = _in[((__CG_global_data__m_nproma * _i1) + _i0)];
                         double __out;
 
                         ///////////////////
@@ -530,10 +530,10 @@ inline void loop_body_41_2_25(velocity_no_nproma_if_prop_lvn_only_0_istep_2_stat
             tmp_index_665 = ((- __CG_p_prog__m_SOA_w_d_0) + __CG_p_patch__CG_cells__m_neighbor_idx[((((2 * __CG_global_data__m_nproma) * __CG_p_patch__m_nblks_c) + (__CG_global_data__m_nproma * _for_it_22)) + _for_it_45)]);
             tmp_index_667 = ((- __CG_p_prog__m_SOA_w_d_2) + __CG_p_patch__CG_cells__m_neighbor_blk[((((2 * __CG_global_data__m_nproma) * __CG_p_patch__m_nblks_c) + (__CG_global_data__m_nproma * _for_it_22)) + _for_it_45)]);
             {
-                double tmp_arg_13;
                 double tmp_call_10;
-                double difcoef0;
                 double tmp_call_11;
+                double difcoef0;
+                double tmp_arg_13;
                 double tmp_arg_14;
 
                 {
@@ -712,8 +712,8 @@ inline void loop_body_0_5_0(velocity_no_nproma_if_prop_lvn_only_0_istep_2_state_
             for (auto _for_it_32 = nflatlev_jg; _for_it_32 < 90; _for_it_32 += 1) {
                 for (auto _for_it_33 = (i_startidx_var_148 - 1); _for_it_33 < i_endidx_var_149; _for_it_33 += 1) {
                     {
-                        double p_diag_0_in_w_concorr_c_0 = __CG_p_diag__m_w_concorr_c[(((((__CG_p_diag__m_SA_w_concorr_c_d_0 * (((- __CG_p_diag__m_SOA_w_concorr_c_d_1) + _for_it_32) + 1)) + ((91 * __CG_p_diag__m_SA_w_concorr_c_d_0) * (((- __CG_p_diag__m_SOA_w_concorr_c_d_2) + _for_it_22) + 1))) - __CG_p_diag__m_SOA_w_concorr_c_d_0) + _for_it_33) + 1)];
                         double z_w_con_c_0_in_0 = z_w_con_c[((__CG_global_data__m_nproma * _for_it_32) + _for_it_33)];
+                        double p_diag_0_in_w_concorr_c_0 = __CG_p_diag__m_w_concorr_c[(((((__CG_p_diag__m_SA_w_concorr_c_d_0 * (((- __CG_p_diag__m_SOA_w_concorr_c_d_1) + _for_it_32) + 1)) + ((91 * __CG_p_diag__m_SA_w_concorr_c_d_0) * (((- __CG_p_diag__m_SOA_w_concorr_c_d_2) + _for_it_22) + 1))) - __CG_p_diag__m_SOA_w_concorr_c_d_0) + _for_it_33) + 1)];
                         double z_w_con_c_out_0;
 
                         ///////////////////
@@ -778,8 +778,8 @@ inline void loop_body_0_5_0(velocity_no_nproma_if_prop_lvn_only_0_istep_2_state_
             }
         }
         {
-            for (auto _j = 0; _j < 91; _j += 1) {
-                for (auto _i = 0; _i < __CG_global_data__m_nproma; _i += 1) {
+            for (auto _i = 0; _i < __CG_global_data__m_nproma; _i += 1) {
+                for (auto _j = 0; _j < 91; _j += 1) {
                     {
                         double _out;
 
@@ -1007,8 +1007,8 @@ inline void loop_body_68_3_16(velocity_no_nproma_if_prop_lvn_only_0_istep_2_stat
 }
 
 inline void loop_body_68_3_29(velocity_no_nproma_if_prop_lvn_only_0_istep_2_state_t *__state, double* __restrict__ __CG_p_int__m_c_lin_e, double* __restrict__ __CG_p_int__m_geofac_grdiv, double* __restrict__ __CG_p_metrics__m_ddqz_z_full_e, double* __restrict__ __CG_p_patch__CG_edges__m_area_edge, int* __restrict__ __CG_p_patch__CG_edges__m_cell_blk, int* __restrict__ __CG_p_patch__CG_edges__m_cell_idx, double* __restrict__ __CG_p_patch__CG_edges__m_inv_primal_edge_length, int* __restrict__ __CG_p_patch__CG_edges__m_quad_blk, int* __restrict__ __CG_p_patch__CG_edges__m_quad_idx, double* __restrict__ __CG_p_patch__CG_edges__m_tangent_orientation, int* __restrict__ __CG_p_patch__CG_edges__m_vertex_blk, int* __restrict__ __CG_p_patch__CG_edges__m_vertex_idx, double* __restrict__ __CG_p_prog__m_vn, const double&  cfl_w_limit, const double&  dtime, int* __restrict__ levelmask, const int&  ntnd, const double&  scalfac_exdiff, double* __restrict__ z_w_con_c_full, double* __restrict__ zeta, double* __restrict__ __CG_p_diag__m_ddt_vn_apc_pc, int SA_cell_blk_d_1_edges_p_patch_4, int SA_cell_idx_d_1_edges_p_patch_4, int __CG_global_data__m_nproma, int __CG_p_diag__m_SA_ddt_vn_apc_pc_d_0, int __CG_p_diag__m_SA_ddt_vn_apc_pc_d_2, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_0, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_1, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_2, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_3, int __CG_p_int__m_SA_c_lin_e_d_0, int __CG_p_int__m_SA_c_lin_e_d_1, int __CG_p_int__m_SA_geofac_grdiv_d_0, int __CG_p_int__m_SA_geofac_grdiv_d_1, int __CG_p_int__m_SOA_c_lin_e_d_0, int __CG_p_int__m_SOA_c_lin_e_d_1, int __CG_p_int__m_SOA_c_lin_e_d_2, int __CG_p_int__m_SOA_geofac_grdiv_d_0, int __CG_p_int__m_SOA_geofac_grdiv_d_1, int __CG_p_int__m_SOA_geofac_grdiv_d_2, int __CG_p_metrics__m_SA_ddqz_z_full_e_d_0, int __CG_p_metrics__m_SOA_ddqz_z_full_e_d_0, int __CG_p_metrics__m_SOA_ddqz_z_full_e_d_1, int __CG_p_metrics__m_SOA_ddqz_z_full_e_d_2, int __CG_p_patch__m_nblks_e, int __CG_p_prog__m_SA_vn_d_0, int __CG_p_prog__m_SOA_vn_d_0, int __CG_p_prog__m_SOA_vn_d_1, int __CG_p_prog__m_SOA_vn_d_2, int _for_it_47, int _for_it_52, int _for_it_53) {
-    double tmp_call_17;
     double w_con_e;
+    double tmp_call_17;
     double _if_cond_29;
     int _if_cond_28;
     int64_t tmp_index_881;
@@ -1112,10 +1112,10 @@ inline void loop_body_68_3_29(velocity_no_nproma_if_prop_lvn_only_0_istep_2_stat
             tmp_index_985 = (__CG_p_patch__CG_edges__m_vertex_idx[((__CG_global_data__m_nproma * _for_it_47) + _for_it_53)] - 1);
             tmp_index_987 = (__CG_p_patch__CG_edges__m_vertex_blk[((__CG_global_data__m_nproma * _for_it_47) + _for_it_53)] - 1);
             {
-                double tmp_arg_19;
-                double tmp_arg_18;
                 double tmp_call_16;
                 double difcoef1;
+                double tmp_arg_19;
+                double tmp_arg_18;
 
                 {
                     double cfl_w_limit_0_in = cfl_w_limit;

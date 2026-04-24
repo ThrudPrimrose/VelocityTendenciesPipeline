@@ -1,85 +1,48 @@
+// Host-side (OpenMP) reductions matching the ``reductions_cpu.h``
+// surface. Every symbol is C-linkage; callers may be CUDA TUs going
+// through nvcc or pure g++ C++.
 #include <omp.h>
+#include "reductions_cpu.h"
 
-////////////////////////////////////////////////////
-// We are running on host and the data is on host
-////////////////////////////////////////////////////
+// Tuned at a coarse grain: below this element count the parallel
+// overhead (thread team dispatch, reduction tree) exceeds the serial
+// cost.
+static constexpr int PARALLEL_THRESHOLD = 10000;
 
-constexpr int PARALLEL_THRESHOLD = 10000; // Tune as needed
-
-// max zero reduction interface
-double reduce_maxZ_to_scalar_cpu(const double *d_in, int size)
-{
-  double max_val = 0.0;
-  if (size > PARALLEL_THRESHOLD) {
-#pragma omp parallel for reduction(max : max_val)
-    for (int i = 0; i < size; i++) {
-      max_val = (d_in[i] > max_val) ? d_in[i] : max_val;
+extern "C" double reduce_max_cpu(const double *d_in, int size) {
+    double m = 0.0;
+    if (size > PARALLEL_THRESHOLD) {
+#pragma omp parallel for reduction(max : m)
+        for (int i = 0; i < size; i++) m = (d_in[i] > m) ? d_in[i] : m;
+    } else {
+        for (int i = 0; i < size; i++) m = (d_in[i] > m) ? d_in[i] : m;
     }
-  } else {
-    for (int i = 0; i < size; i++) {
-      max_val = (d_in[i] > max_val) ? d_in[i] : max_val;
-    }
-  }
-  return max_val;
+    return m;
 }
 
-void reduce_maxZ_to_address_cpu(const double *d_in, double* d_out, int size)
-{
-  double max_val = 0.0;
-  if (size > PARALLEL_THRESHOLD) {
-#pragma omp parallel for reduction(max : max_val)
-    for (int i = 0; i < size; i++) {
-      max_val = (d_in[i] > max_val) ? d_in[i] : max_val;
-    }
-  } else {
-    for (int i = 0; i < size; i++) {
-      max_val = (d_in[i] > max_val) ? d_in[i] : max_val;
-    }
-  }
-  d_out[0] = max_val;
+extern "C" void reduce_max_store_cpu(const double *d_in, double *d_out,
+                                     int size) {
+    d_out[0] = reduce_max_cpu(d_in, size);
 }
 
-// sum reduction interface
-int reduce_sum_to_scalar_cpu(const int *d_in, int size)
-{
-  int sum = 0;
-  if (size > PARALLEL_THRESHOLD) {
-#pragma omp parallel for reduction(+ : sum)
-    for (int i = 0; i < size; i++) {
-      sum += d_in[i];
+extern "C" int reduce_sum_cpu(const int *d_in, int size) {
+    int s = 0;
+    if (size > PARALLEL_THRESHOLD) {
+#pragma omp parallel for reduction(+ : s)
+        for (int i = 0; i < size; i++) s += d_in[i];
+    } else {
+        for (int i = 0; i < size; i++) s += d_in[i];
     }
-  } else {
-    for (int i = 0; i < size; i++) {
-      sum += d_in[i];
-    }
-  }
-  return sum;
+    return s;
 }
 
-void reduce_sum_to_address_cpu(const int *d_in, int* d_out, int size)
-{
-  int sum = 0;
-  if (size > PARALLEL_THRESHOLD) {
-#pragma omp parallel for reduction(+ : sum)
-    for (int i = 0; i < size; i++) {
-      sum += d_in[i];
-    }
-  } else {
-    for (int i = 0; i < size; i++) {
-      sum += d_in[i];
-    }
-  }
-  d_out[0] = sum;
+extern "C" void reduce_sum_store_cpu(const int *d_in, int *d_out, int size) {
+    d_out[0] = reduce_sum_cpu(d_in, size);
 }
 
-
-// scan reduction interface
-int reduce_scan_cpu(const int *d_in, int size)
-{
-  return reduce_sum_to_scalar_cpu(d_in, size) > 0 ? 1 : 0;
-}
-
-int reduce_scan_cpu(const int d_in, int size)
-{
-  return d_in > 0 ? 1 : 0;
+extern "C" int reduce_any_cpu(const int *d_in, int size) {
+    // Early-exit serial scan; OpenMP doesn't help here because any
+    // hit is enough and the overhead outweighs the parallel gain.
+    for (int i = 0; i < size; i++) if (d_in[i] > 0) return 1;
+    return 0;
 }

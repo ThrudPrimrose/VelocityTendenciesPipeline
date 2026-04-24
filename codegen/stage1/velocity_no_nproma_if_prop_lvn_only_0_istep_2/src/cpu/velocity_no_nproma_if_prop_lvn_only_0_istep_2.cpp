@@ -411,10 +411,10 @@ inline void reduce_30_1_26(velocity_no_nproma_if_prop_lvn_only_0_istep_2_state_t
     {
 
         {
-            for (auto _i0 = 0; _i0 < 91; _i0 += 1) {
-                for (auto _i1 = 0; _i1 < __CG_global_data__m_nproma; _i1 += 1) {
+            for (auto _i0 = 0; _i0 < __CG_global_data__m_nproma; _i0 += 1) {
+                for (auto _i1 = 0; _i1 < 91; _i1 += 1) {
                     {
-                        double __inp = _in[((__CG_global_data__m_nproma * _i0) + _i1)];
+                        double __inp = _in[((__CG_global_data__m_nproma * _i1) + _i0)];
                         double __out;
 
                         ///////////////////
@@ -530,10 +530,10 @@ inline void loop_body_41_2_25(velocity_no_nproma_if_prop_lvn_only_0_istep_2_stat
             tmp_index_665 = (__CG_p_patch__CG_cells__m_neighbor_idx[(((((2 * __CG_global_data__m_nproma) * __CG_p_patch__m_nblks_c) + (__CG_global_data__m_nproma * (_for_it_22 - 1))) + _for_it_45) - 1)] - __CG_p_prog__m_SOA_w_d_0);
             tmp_index_667 = (__CG_p_patch__CG_cells__m_neighbor_blk[(((((2 * __CG_global_data__m_nproma) * __CG_p_patch__m_nblks_c) + (__CG_global_data__m_nproma * (_for_it_22 - 1))) + _for_it_45) - 1)] - __CG_p_prog__m_SOA_w_d_2);
             {
-                double difcoef0;
-                double tmp_call_11;
-                double tmp_arg_13;
                 double tmp_call_10;
+                double tmp_call_11;
+                double difcoef0;
+                double tmp_arg_13;
                 double tmp_arg_14;
 
                 {
@@ -626,10 +626,10 @@ inline void loop_body_41_2_25(velocity_no_nproma_if_prop_lvn_only_0_istep_2_stat
 }
 
 inline void loop_body_0_5_0(velocity_no_nproma_if_prop_lvn_only_0_istep_2_state_t *__state, double* __restrict__ __CG_p_diag__m_w_concorr_c, double* __restrict__ __CG_p_int__m_e_bln_c_s, double* __restrict__ __CG_p_int__m_geofac_n2s, double* __restrict__ __CG_p_metrics__m_coeff1_dwdz, double* __restrict__ __CG_p_metrics__m_coeff2_dwdz, double* __restrict__ __CG_p_metrics__m_ddqz_z_half, int* __restrict__ __CG_p_patch__CG_cells__CG_decomp_info__m_owner_mask, double* __restrict__ __CG_p_patch__CG_cells__m_area, int* __restrict__ __CG_p_patch__CG_cells__m_edge_blk, int* __restrict__ __CG_p_patch__CG_cells__m_edge_idx, int* __restrict__ __CG_p_patch__CG_cells__m_end_index, int* __restrict__ __CG_p_patch__CG_cells__m_neighbor_blk, int* __restrict__ __CG_p_patch__CG_cells__m_neighbor_idx, int* __restrict__ __CG_p_patch__CG_cells__m_start_index, double* __restrict__ __CG_p_prog__m_w, const double&  cfl_w_limit, const double&  dtime, const int&  ntnd, const double&  scalfac_exdiff, double* __restrict__ z_kin_hor_e, double* __restrict__ z_v_grad_w, double* __restrict__ __CG_p_diag__m_ddt_w_adv_pc, int* __restrict__ levmask, double* __restrict__ vcflmax, double* __restrict__ z_ekinh, double* __restrict__ z_w_con_c_full, int A_z_kin_hor_e_d_0, int A_z_kin_hor_e_d_1, int OA_z_kin_hor_e_d_0, int OA_z_kin_hor_e_d_1, int OA_z_kin_hor_e_d_2, int SA_area_d_0_cells_p_patch_2, int SOA_area_d_0_cells_p_patch_2, int SOA_area_d_1_cells_p_patch_2, int SOA_end_index_d_0_cells_p_patch_2, int SOA_start_index_d_0_cells_p_patch_2, int __CG_global_data__m_nproma, int __CG_p_diag__m_SA_ddt_w_adv_pc_d_0, int __CG_p_diag__m_SA_ddt_w_adv_pc_d_2, int __CG_p_diag__m_SA_w_concorr_c_d_0, int __CG_p_diag__m_SOA_ddt_w_adv_pc_d_0, int __CG_p_diag__m_SOA_ddt_w_adv_pc_d_1, int __CG_p_diag__m_SOA_ddt_w_adv_pc_d_2, int __CG_p_diag__m_SOA_ddt_w_adv_pc_d_3, int __CG_p_diag__m_SOA_w_concorr_c_d_0, int __CG_p_diag__m_SOA_w_concorr_c_d_1, int __CG_p_diag__m_SOA_w_concorr_c_d_2, int __CG_p_int__m_SA_e_bln_c_s_d_0, int __CG_p_int__m_SA_e_bln_c_s_d_1, int __CG_p_int__m_SA_geofac_n2s_d_0, int __CG_p_int__m_SA_geofac_n2s_d_1, int __CG_p_int__m_SOA_e_bln_c_s_d_0, int __CG_p_int__m_SOA_e_bln_c_s_d_1, int __CG_p_int__m_SOA_e_bln_c_s_d_2, int __CG_p_int__m_SOA_geofac_n2s_d_0, int __CG_p_int__m_SOA_geofac_n2s_d_1, int __CG_p_int__m_SOA_geofac_n2s_d_2, int __CG_p_metrics__m_SA_coeff1_dwdz_d_0, int __CG_p_metrics__m_SA_coeff2_dwdz_d_0, int __CG_p_metrics__m_SA_ddqz_z_half_d_0, int __CG_p_metrics__m_SOA_coeff1_dwdz_d_0, int __CG_p_metrics__m_SOA_coeff1_dwdz_d_1, int __CG_p_metrics__m_SOA_coeff1_dwdz_d_2, int __CG_p_metrics__m_SOA_coeff2_dwdz_d_0, int __CG_p_metrics__m_SOA_coeff2_dwdz_d_1, int __CG_p_metrics__m_SOA_coeff2_dwdz_d_2, int __CG_p_metrics__m_SOA_ddqz_z_half_d_0, int __CG_p_metrics__m_SOA_ddqz_z_half_d_1, int __CG_p_metrics__m_SOA_ddqz_z_half_d_2, int __CG_p_patch__m_nblks_c, int __CG_p_prog__m_SA_w_d_0, int __CG_p_prog__m_SOA_w_d_0, int __CG_p_prog__m_SOA_w_d_1, int __CG_p_prog__m_SOA_w_d_2, int _for_it_22, int i_endblk_2, int i_endblk_var_147, int i_startblk_2, int i_startblk_var_146, int nflatlev_jg, int nrdmax_jg) {
-    int *cfl_clipping;
-    cfl_clipping = new int DACE_ALIGN(64)[(91 * __CG_global_data__m_nproma)];
     double *z_w_con_c;
     z_w_con_c = new double DACE_ALIGN(64)[(91 * __CG_global_data__m_nproma)];
+    int *cfl_clipping;
+    cfl_clipping = new int DACE_ALIGN(64)[(91 * __CG_global_data__m_nproma)];
     int i_startidx_in_var_79_1;
     int i_endidx_in_var_80_1;
     int i_startidx_in_var_79_0;
@@ -712,8 +712,8 @@ inline void loop_body_0_5_0(velocity_no_nproma_if_prop_lvn_only_0_istep_2_state_
             for (auto _for_it_32 = (nflatlev_jg + 1); _for_it_32 < 91; _for_it_32 += 1) {
                 for (auto _for_it_33 = i_startidx_var_148; _for_it_33 < (i_endidx_var_149 + 1); _for_it_33 += 1) {
                     {
-                        double p_diag_0_in_w_concorr_c_0 = __CG_p_diag__m_w_concorr_c[((((__CG_p_diag__m_SA_w_concorr_c_d_0 * ((- __CG_p_diag__m_SOA_w_concorr_c_d_1) + _for_it_32)) + ((91 * __CG_p_diag__m_SA_w_concorr_c_d_0) * ((- __CG_p_diag__m_SOA_w_concorr_c_d_2) + _for_it_22))) - __CG_p_diag__m_SOA_w_concorr_c_d_0) + _for_it_33)];
                         double z_w_con_c_0_in_0 = z_w_con_c[(((__CG_global_data__m_nproma * (_for_it_32 - 1)) + _for_it_33) - 1)];
+                        double p_diag_0_in_w_concorr_c_0 = __CG_p_diag__m_w_concorr_c[((((__CG_p_diag__m_SA_w_concorr_c_d_0 * ((- __CG_p_diag__m_SOA_w_concorr_c_d_1) + _for_it_32)) + ((91 * __CG_p_diag__m_SA_w_concorr_c_d_0) * ((- __CG_p_diag__m_SOA_w_concorr_c_d_2) + _for_it_22))) - __CG_p_diag__m_SOA_w_concorr_c_d_0) + _for_it_33)];
                         double z_w_con_c_out_0;
 
                         ///////////////////
@@ -778,8 +778,8 @@ inline void loop_body_0_5_0(velocity_no_nproma_if_prop_lvn_only_0_istep_2_state_
             }
         }
         {
-            for (auto _j = 0; _j < 91; _j += 1) {
-                for (auto _i = 0; _i < __CG_global_data__m_nproma; _i += 1) {
+            for (auto _i = 0; _i < __CG_global_data__m_nproma; _i += 1) {
+                for (auto _j = 0; _j < 91; _j += 1) {
                     {
                         double _out;
 
@@ -874,8 +874,8 @@ inline void loop_body_0_5_0(velocity_no_nproma_if_prop_lvn_only_0_istep_2_state_
 
         }
     }
-    delete[] cfl_clipping;
     delete[] z_w_con_c;
+    delete[] cfl_clipping;
 }
 
 inline void reduce_66_3_2(velocity_no_nproma_if_prop_lvn_only_0_istep_2_state_t *__state, int* __restrict__ _in, int* __restrict__  _out, int i_endblk_var_147, int i_startblk_var_146) {
@@ -1008,8 +1008,8 @@ inline void loop_body_68_3_16(velocity_no_nproma_if_prop_lvn_only_0_istep_2_stat
 
 inline void loop_body_68_3_29(velocity_no_nproma_if_prop_lvn_only_0_istep_2_state_t *__state, double* __restrict__ __CG_p_int__m_c_lin_e, double* __restrict__ __CG_p_int__m_geofac_grdiv, double* __restrict__ __CG_p_metrics__m_ddqz_z_full_e, double* __restrict__ __CG_p_patch__CG_edges__m_area_edge, int* __restrict__ __CG_p_patch__CG_edges__m_cell_blk, int* __restrict__ __CG_p_patch__CG_edges__m_cell_idx, double* __restrict__ __CG_p_patch__CG_edges__m_inv_primal_edge_length, int* __restrict__ __CG_p_patch__CG_edges__m_quad_blk, int* __restrict__ __CG_p_patch__CG_edges__m_quad_idx, double* __restrict__ __CG_p_patch__CG_edges__m_tangent_orientation, int* __restrict__ __CG_p_patch__CG_edges__m_vertex_blk, int* __restrict__ __CG_p_patch__CG_edges__m_vertex_idx, double* __restrict__ __CG_p_prog__m_vn, const double&  cfl_w_limit, const double&  dtime, int* __restrict__ levelmask, const int&  ntnd, const double&  scalfac_exdiff, double* __restrict__ z_w_con_c_full, double* __restrict__ zeta, double* __restrict__ __CG_p_diag__m_ddt_vn_apc_pc, int SA_cell_blk_d_1_edges_p_patch_4, int SA_cell_idx_d_1_edges_p_patch_4, int __CG_global_data__m_nproma, int __CG_p_diag__m_SA_ddt_vn_apc_pc_d_0, int __CG_p_diag__m_SA_ddt_vn_apc_pc_d_2, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_0, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_1, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_2, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_3, int __CG_p_int__m_SA_c_lin_e_d_0, int __CG_p_int__m_SA_c_lin_e_d_1, int __CG_p_int__m_SA_geofac_grdiv_d_0, int __CG_p_int__m_SA_geofac_grdiv_d_1, int __CG_p_int__m_SOA_c_lin_e_d_0, int __CG_p_int__m_SOA_c_lin_e_d_1, int __CG_p_int__m_SOA_c_lin_e_d_2, int __CG_p_int__m_SOA_geofac_grdiv_d_0, int __CG_p_int__m_SOA_geofac_grdiv_d_1, int __CG_p_int__m_SOA_geofac_grdiv_d_2, int __CG_p_metrics__m_SA_ddqz_z_full_e_d_0, int __CG_p_metrics__m_SOA_ddqz_z_full_e_d_0, int __CG_p_metrics__m_SOA_ddqz_z_full_e_d_1, int __CG_p_metrics__m_SOA_ddqz_z_full_e_d_2, int __CG_p_patch__m_nblks_e, int __CG_p_prog__m_SA_vn_d_0, int __CG_p_prog__m_SOA_vn_d_0, int __CG_p_prog__m_SOA_vn_d_1, int __CG_p_prog__m_SOA_vn_d_2, int _for_it_47, int _for_it_52, int _for_it_53) {
     double w_con_e;
-    double _if_cond_29;
     double tmp_call_17;
+    double _if_cond_29;
     int _if_cond_28;
     int64_t tmp_index_881;
     int64_t tmp_index_883;
@@ -1113,9 +1113,9 @@ inline void loop_body_68_3_29(velocity_no_nproma_if_prop_lvn_only_0_istep_2_stat
             tmp_index_987 = (__CG_p_patch__CG_edges__m_vertex_blk[(((__CG_global_data__m_nproma * (_for_it_47 - 1)) + _for_it_53) - 1)] - 1);
             {
                 double tmp_call_16;
-                double tmp_arg_18;
-                double tmp_arg_19;
                 double difcoef1;
+                double tmp_arg_19;
+                double tmp_arg_18;
 
                 {
                     double cfl_w_limit_0_in = cfl_w_limit;

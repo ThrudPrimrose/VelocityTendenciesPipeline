@@ -12,18 +12,19 @@ Turns the per-block scalar read-modify-write shape
 into
 
     for block:
-        maxvcfl[0:nlev, 0:nproma] = 0                           # 2D map-fill
+        maxvcfl[0:nproma, 0:nlev] = 0                           # 2D map-fill
         for level:                                               # now Map-able
             for nproma_i:                                        # Map
-                maxvcfl[level-1, nproma_i-1] = max(
-                    maxvcfl[level-1, nproma_i-1], expr)
-        vcflmax[block] = max-reduce(maxvcfl[0:nlev, 0:nproma])   # 2D reduce
+                maxvcfl[nproma_i-1, level-1] = max(
+                    maxvcfl[nproma_i-1, level-1], expr)
+        vcflmax[block] = max-reduce(maxvcfl[0:nproma, 0:nlev])   # 2D reduce
 
-``maxvcfl`` descriptor: ``Scalar(f64)`` -> ``Array(f64, [nlev, nproma])``.
-``vcflmax`` stays ``Array(f64, [nblks])`` unchanged; only the producing
-tasklet is replaced by a ``Reduce(max)`` over both maxvcfl axes.
+``maxvcfl`` descriptor: ``Scalar(f64)`` -> ``Array(f64, [nproma, nlev])``
+with Fortran-major strides ``(1, nproma)``. ``vcflmax`` stays
+``Array(f64, [nblks])`` unchanged; only the producing tasklet is
+replaced by a ``Reduce(max)`` over both maxvcfl axes.
 
-The 2D layout lets the level loop parallelise: every (level, nproma_i)
+The 2D layout lets the level loop parallelise: every (nproma_i, level)
 iteration writes a distinct maxvcfl slot, so there is no cross-iteration
 write conflict on the outer level loop.
 """
@@ -46,7 +47,18 @@ def promote_maxvcfl(sdfg: dace.SDFG,
     dtype = desc.dtype
     transient = desc.transient
     sdfg.remove_data(scalar_name, validate=False)
-    sdfg.add_array(scalar_name, shape=[nlev_sym, nproma_sym],
+    # Promote to ``(nproma, nlev)`` Fortran-major. Shape mirrors the
+    # classic Fortran ``maxvcfl(nproma, nlev)`` declaration; strides
+    # ``(1, nproma)`` make the nproma axis contiguous. That lines up
+    # with every other velocity transient and means stage 3's
+    # LiftTransients takes the Fortran-packed/append branch, giving
+    # a 3D ``(nproma, nlev, nblks)`` lifted layout. No permutation
+    # pass needed downstream -- threadIdx.x → nproma gets coalesced
+    # access in the level/nproma kernels directly.
+    from dace import symbolic
+    sdfg.add_array(scalar_name,
+                   shape=[nproma_sym, nlev_sym],
+                   strides=[1, symbolic.pystr_to_symbolic(nproma_sym)],
                    dtype=dtype, transient=transient)
 
     rewrites = 0
@@ -89,9 +101,11 @@ def promote_maxvcfl(sdfg: dace.SDFG,
 
 
 def _rmw_memlet(name: str, inner_vars):
-    # inner_vars[0] is the innermost loop var (nproma); [1] is level.
+    # Shape is ``[nproma, nlev]`` (Fortran-major): nproma is axis 0
+    # with stride 1, level is axis 1 with stride nproma. inner_vars[0]
+    # is the innermost loop var (nproma); [1] is level.
     level_var, nproma_var = inner_vars[1], inner_vars[0]
-    return mm.Memlet(f"{name}[{level_var} - 1, {nproma_var} - 1]")
+    return mm.Memlet(f"{name}[{nproma_var} - 1, {level_var} - 1]")
 
 
 def _enclosing_loop_vars(state, n: int):
@@ -109,15 +123,18 @@ def _rewrite_init(state, access_node, tasklet, name, nlev_sym, nproma_sym):
         state.remove_edge(e)
     state.remove_node(tasklet)
 
+    # ``_i`` (nproma) is listed first so DaCe maps it to threadIdx.x --
+    # the stride-1 axis, matching the Fortran-major layout installed
+    # above.
     me, mx = state.add_map("init_maxvcfl",
-                           {"_j": f"0:{nlev_sym}", "_i": f"0:{nproma_sym}"})
+                           {"_i": f"0:{nproma_sym}", "_j": f"0:{nlev_sym}"})
     mx.add_in_connector("IN__buf")
     mx.add_out_connector("OUT__buf")
     t = state.add_tasklet("zero", {}, {"_out"}, "_out = 0")
     state.add_nedge(me, t, mm.Memlet())
-    state.add_edge(t, "_out", mx, "IN__buf", mm.Memlet(f"{name}[_j, _i]"))
+    state.add_edge(t, "_out", mx, "IN__buf", mm.Memlet(f"{name}[_i, _j]"))
     state.add_edge(mx, "OUT__buf", access_node, None,
-                   mm.Memlet(f"{name}[0:{nlev_sym}, 0:{nproma_sym}]"))
+                   mm.Memlet(f"{name}[0:{nproma_sym}, 0:{nlev_sym}]"))
 
 
 def _is_consumer_read(state, access_node, sink_name) -> bool:
@@ -151,6 +168,6 @@ def _install_final_reduction(state, access_node, scalar_name, sink_name,
 
     red = state.add_reduce("lambda a, b: max(a, b)", axes=[0, 1], identity=None)
     state.add_edge(access_node, None, red, None,
-                   mm.Memlet(f"{scalar_name}[0:{nlev_sym}, 0:{nproma_sym}]"))
+                   mm.Memlet(f"{scalar_name}[0:{nproma_sym}, 0:{nlev_sym}]"))
     state.add_edge(red, None, sink_access, None,
                    mm.Memlet(data=sink_name, subset=sink_subset))

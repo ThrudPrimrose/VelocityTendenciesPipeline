@@ -32,6 +32,10 @@ from pathlib import Path
 import dace
 
 from dace.transformation.passes.lift_transients import lift_transients
+from dace.transformation.passes.loop_invariant_code_motion import (
+    LoopInvariantCodeMotion)
+from dace.transformation.passes.loop_local_memory_reduction import (
+    LoopLocalMemoryReduction)
 from dace.transformation.passes.verify_no_nested_transients import (
     verify_no_nested_transients)
 from utils.passes.int64_to_int32 import int64_to_int32
@@ -86,6 +90,27 @@ def optimization_action(sdfg: dace.SDFG) -> dace.SDFG:
     # step re-introduces a nested transient (e.g. a GPU pass adding a
     # scratch array at the wrong level).
     verify_no_nested_transients(sdfg)
+
+    # 5. Loop-invariant code motion. Hoists tasklets whose inputs don't
+    # change across iterations out of enclosing LoopRegions (into the
+    # preheader) and out of Map scopes (into the enclosing state).
+    # Runs before GPU offloading so the hoisted tasklets are scheduled
+    # on the host and the per-thread kernel work shrinks.
+    hoisted = LoopInvariantCodeMotion().apply_pass(sdfg, {})
+    if hoisted:
+        print(f"Stage #{STAGE_ID}: LICM hoisted {hoisted} tasklet/region(s)")
+    sdfg.validate()
+
+    # 6. Loop-local memory reduction. Shrinks thread-local arrays whose
+    # access pattern is a sliding window (``a[i + k]``) to a circular
+    # buffer of size ``max(k) - min(k) + 1``. Rounds up to the next
+    # power of two so modulo becomes a bitmask. Per-iteration memory
+    # drops from O(N) to O(window size); a win for any stencil-style
+    # transient that survived earlier simplification.
+    shrunk = LoopLocalMemoryReduction().apply_pass(sdfg, {})
+    if shrunk:
+        print(f"Stage #{STAGE_ID}: LLMR reduced {len(shrunk)} array(s)")
+    sdfg.validate()
 
     return sdfg
 
