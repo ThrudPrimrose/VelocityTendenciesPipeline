@@ -295,9 +295,7 @@
     p_prog.__f2dace_SOA_w_d_2_s_287, \
     dt_linintp_ubc, \
     dtime, \
-    istep, \
     ldeepatmo, \
-    lvn_only, \
     ntnd
 
 #define VELOCITY_INIT_ARGS(global_data, p_diag, p_int, p_metrics, p_patch, p_prog, z_kin_hor_e, z_vt_ie, z_w_concorr_me, dt_linintp_ubc, dtime, istep, ldeepatmo, lvn_only, ntnd) \

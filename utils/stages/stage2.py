@@ -50,6 +50,11 @@ def optimization_action(sdfg: dace.SDFG) -> dace.SDFG:
                        begin_expr=None,
                        convert_leq_to_lt=True,
                        normalize_loops=True).apply_pass(sdfg, {})
+    # In case some arrays were already 0 begin
+    OffsetLoopsAndMaps(offset_expr="1",
+                       begin_expr="-1",
+                       convert_leq_to_lt=False,
+                       normalize_loops=False).apply_pass(sdfg, {})
     sdfg.validate()
 
     # 3. Re-render every symbolic expression in the SDFG through

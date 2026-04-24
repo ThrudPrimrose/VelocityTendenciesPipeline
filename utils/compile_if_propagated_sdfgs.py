@@ -37,7 +37,11 @@ def _cpu_src(build_loc: str, name: str) -> str:
 def _gpu_src(build_loc: str, name: str) -> str:
     if AMD:
         return f"{build_loc}/src/cuda/hip/{name}_cuda.cpp"
-    return f"{build_loc}/src/cuda/{name}_cuda.cpp"
+    # DaCe's CUDA codegen writes the device translation unit as ``.cu``
+    # by default (the f2dace fork rewrote it to ``.cpp``; we use
+    # upstream, so keep the native extension and let ``_pick_compiler``
+    # route it to nvcc).
+    return f"{build_loc}/src/cuda/{name}_cuda.cu"
 
 
 def _header(build_loc: str, name: str) -> str:
@@ -60,13 +64,15 @@ def _pick_compiler(src: str) -> str:
     return _nvcc() if src.endswith(".cu") else _cxx()
 
 
-def _get_link_compiler(sources: typing.List[str], gpu: bool) -> str:
-    """Link with nvcc/hipcc when any .cu objects need the CUDA/HIP runtime."""
-    if AMD and gpu:
-        return "hipcc"
-    if gpu and any(s.endswith(".cu") for s in sources):
-        return "nvcc"
-    return _cxx()
+def _get_link_compiler(gpu: bool) -> str:
+    """When ``gpu=True`` we always link with nvcc/hipcc. DaCe emits GPU
+    runtime calls (``cudaMalloc``, ``DACE_GPU_CHECK``, stream/context
+    management) into both the host ``.cpp`` and the kernel ``.cu`` --
+    both need to go through the GPU toolchain, and the link command
+    carries ``-arch=sm_*`` which only nvcc understands."""
+    if not gpu:
+        return _cxx()
+    return "hipcc" if AMD else "nvcc"
 
 
 def _get_flags(gpu: bool, release: bool, lib: bool, debuginfo: bool) -> str:
@@ -182,12 +188,57 @@ def _compile_and_link(
     jobs: int = os.cpu_count(),
 ):
     compile_flags = flags.replace("--shared", "").replace("-shared", "")
+    # nvcc-only flags that g++ doesn't understand. When routing a .cpp
+    # file through g++, the GPU flag set carries nvcc dialect that
+    # needs stripping / unwrapping:
+    #   * ``--diag-suppress N``           → drop
+    #   * ``-arch=sm_XX``                 → drop
+    #   * ``--expt-relaxed-constexpr``    → drop
+    #   * ``--use_fast_math`` etc.        → drop
+    #   * ``-Xcompiler=X`` / ``-Xptxas=`` → unwrap to ``X`` / drop
+    #   * ``-ccbin=...``                  → drop
+    import re as _re
+    _NVCC_ONLY_TOKENS = _re.compile(
+        r"(?:--diag-suppress\s+\S+|"
+        r"-arch=sm_\w+|"
+        r"--expt-relaxed-constexpr|"
+        r"--use_fast_math|"
+        r"--ftz=\S+|--prec-div=\S+|--prec-sqrt=\S+|--fmad=\S+|"
+        r"-Xptxas=\S+|"
+        r"--restrict|"
+        r"-lineinfo|"
+        r"-G(?=\s|$)|"
+        r"-ccbin=\S+)"
+    )
+    _XCOMPILER = _re.compile(r"-Xcompiler=(\S+)")
+
+    def _flags_for_cxx(f: str) -> str:
+        f = _NVCC_ONLY_TOKENS.sub("", f)
+        f = _XCOMPILER.sub(r"\1", f)
+        return " ".join(f.split())
+
     objects = []
 
     def compile_one(src):
         obj = os.path.splitext(src)[0] + ".o"
-        cc = _pick_compiler(src)
-        cmd = f"{cc} -c {src} {includes} {compile_flags} -o {obj}"
+        obj_dir = os.path.dirname(obj)
+        if obj_dir:
+            os.makedirs(obj_dir, exist_ok=True)
+        # In GPU mode, DaCe puts CUDA runtime calls
+        # (``cudaMalloc``, ``DACE_GPU_CHECK``, stream/context refs)
+        # into the host .cpp as well -- so that file must go through
+        # nvcc with ``-x cu`` so nvcc treats it as CUDA (without that
+        # flag nvcc delegates .cpp to the host compiler, which doesn't
+        # know the CUDA runtime).
+        xlang = ""
+        if gpu and src.endswith(".cpp"):
+            cc = _nvcc()
+            xlang = "-x cu"
+        else:
+            cc = _pick_compiler(src)
+        per_flags = (compile_flags if cc.endswith("nvcc") or cc.endswith("hipcc")
+                     else _flags_for_cxx(compile_flags))
+        cmd = f"{cc} {xlang} -c {src} {includes} {per_flags} -o {obj}"
         ret = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         return src, obj, cc, ret
 
@@ -204,7 +255,7 @@ def _compile_and_link(
                 raise RuntimeError(f"FAILED: {src}")
             objects.append(obj)
 
-    link_cc = _get_link_compiler(sources, gpu)
+    link_cc = _get_link_compiler(gpu)
 
     import re as _re
     arch_match = _re.search(r"-arch=sm_\w+", compile_flags)
@@ -234,7 +285,7 @@ def compile_if_propagated_sdfgs(
     generate_code: bool,
     lib: bool,
     main_name: typing.Optional[str],
-    stage: int,
+    stage: int,  # unused; kept for API compat with pipeline callers
     debuginfo: bool,
     extra_sources: typing.Optional[typing.Iterable[str]] = None,
     extra_include_dirs: typing.Optional[typing.Iterable[str]] = None,
@@ -307,7 +358,13 @@ def compile_if_propagated_sdfgs(
         gpu_file = _gpu_src(build_loc, name)
 
         sources.append(cpu_file)
-        if gpu and stage >= 5:
+        if gpu:
+            # DaCe emits the device-side code into ``src/cuda/*_cuda.cu``
+            # whenever any node in the SDFG has a GPU schedule. Stage 4
+            # is where we first turn on GPU schedules, so the .cu must
+            # join the compile pool from stage 4 onwards. (The old
+            # ``stage >= 5`` gate predated moving the offload step
+            # earlier.)
             sources.append(gpu_file)
 
     if post_codegen_hook is not None:
