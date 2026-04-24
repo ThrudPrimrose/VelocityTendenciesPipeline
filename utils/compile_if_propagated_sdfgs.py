@@ -135,8 +135,13 @@ def _get_flags(gpu: bool, release: bool, lib: bool, debuginfo: bool) -> str:
                 f"-Xcompiler=-mtune=native --restrict"
             )
         else:
+            # Debug: IEEE-compliant fp math. ``--fmad=false`` disables
+            # fused multiply-add (otherwise ``a*b+c`` rounds once; CPU
+            # does two rounds), ``--prec-div/--prec-sqrt`` force IEEE
+            # division/sqrt, ``--ftz=false`` keeps denormals. Asserts
+            # stay on (no ``-DNDEBUG``).
             flags = (
-                f"{suppress} {xcompiler_warns} -DNDEBUG "
+                f"{suppress} {xcompiler_warns} "
                 f"-Xcompiler=-Wall -Xcompiler=-Wextra {omp_flag} "
                 f"--expt-relaxed-constexpr {arch_flag} "
                 f"-O0 -Xcompiler=-g -g -Xcompiler=-O0 -G {debugflag} "

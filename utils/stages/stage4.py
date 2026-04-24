@@ -167,8 +167,14 @@ def main():
     argp = argparse.ArgumentParser()
     argp.add_argument("--optimize", action=argparse.BooleanOptionalAction, default=False)
     argp.add_argument("--compile", action=argparse.BooleanOptionalAction, default=False)
-    argp.add_argument("--debug", dest="release", action="store_false", default=True,
-                      help="build with -O0 + DACE_VELOCITY_DEBUG (default: release)")
+    # Debug is the default: -O0, IEEE-compliant fp (``--fmad=false``,
+    # ``--prec-div=true``, ``--prec-sqrt=true``, ``--ftz=false``, no
+    # ``--use_fast_math``). Parallel reductions still drift at the
+    # last bit because tree-order != sequential-order, but per-op
+    # rounding matches the CPU reference. ``--release`` opts in to
+    # -O3 + fast math.
+    argp.add_argument("--release", action="store_true", default=False,
+                      help="build with -O3 + fast math (default: debug / IEEE)")
     args = argp.parse_args()
     if not args.optimize and not args.compile:
         args.optimize, args.compile = True, True
@@ -196,7 +202,17 @@ def main():
             name: dace.SDFG.from_file(common.stage_output(name, STAGE_ID))
             for name in names
         }
-        common.compile_action(STAGE_ID, sdfgs, gpu=True, release=args.release)
+        # Velocity-owned reduction helpers. The GPU launch wrappers live
+        # in ``src/reductions_kernel.cu`` (CUB + thrust + custom scan
+        # kernels); the CPU OpenMP fallbacks in ``src/reductions.cpp``.
+        # Included here so every stage-4 link resolves
+        # ``reduce_{maxZ,scan,sum}_{cpu,gpu,device}`` from the tasklets
+        # that ``replace_reductions_with_tasklets`` emits.
+        extra_sources = ["src/reductions.cpp", "src/reductions_kernel.cu"]
+        extra_include_dirs = ["include"]
+        common.compile_action(STAGE_ID, sdfgs, gpu=True, release=args.release,
+                              extra_sources=extra_sources,
+                              extra_include_dirs=extra_include_dirs)
 
 
 if __name__ == "__main__":

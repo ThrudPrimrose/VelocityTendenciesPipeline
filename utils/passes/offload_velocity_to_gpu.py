@@ -79,6 +79,13 @@ def OffloadVelocityToGPU(sdfg: SDFG, exclude_from_offload=()):
     # don't validate between them.
     _ensure_gpu_prefix_for_gpu_storage_arrays(sdfg)
     _reconcile_nsdfg_connector_names(sdfg)
+    # Swap standard-library Reduce nodes for tasklets that dispatch to
+    # the velocity-owned reduction helpers (CPU / GPU launch / device
+    # inline, chosen from schedule). Runs last so it sees the final
+    # storage and schedule layout produced by the preceding phases.
+    from utils.passes.replace_reductions_with_tasklets import \
+        replace_reductions_with_tasklets
+    replace_reductions_with_tasklets(sdfg)
     sdfg.validate()
 
 

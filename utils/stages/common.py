@@ -59,6 +59,8 @@ def compile_action(
     release: bool = True,
     debuginfo: bool = True,
     output: str = None,
+    extra_sources=None,
+    extra_include_dirs=None,
 ):
     """Codegen + compile + link the staged SDFGs into ``velocity_stage<N>``."""
     repo = Path(__file__).resolve().parent.parent.parent
@@ -79,4 +81,6 @@ def compile_action(
         stage=stage,
         debuginfo=debuginfo,
         output=output,
+        extra_sources=extra_sources,
+        extra_include_dirs=extra_include_dirs,
     )
