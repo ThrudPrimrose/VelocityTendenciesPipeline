@@ -12,8 +12,18 @@ What stayed: backend detection, flag / compiler selection, concurrent
 compile-and-link, and the codegen-then-link structure.
 """
 
-import dace
 import os
+
+# Pin ``__DACE_NO_SYNC=1`` BEFORE importing ``dace`` so the codegen's
+# ``cudaStreamSynchronize`` / ``cudaDeviceSynchronize`` /
+# ``cudaEventSynchronize`` emission sites (gated on
+# ``dace.codegen.common.no_sync_emission()``) all elide. The velocity
+# pipeline uses explicit per-state sync tasklets in
+# ``OffloadVelocityToGPU`` instead. Callers that want sync emission
+# back can set ``__DACE_NO_SYNC=0`` before the first import.
+os.environ.setdefault("__DACE_NO_SYNC", "1")
+
+import dace
 import sys
 import typing
 from dace.sdfg import infer_types
@@ -191,6 +201,7 @@ def _compile_and_link(
     gpu: bool,
     lib: bool,
     jobs: int = os.cpu_count(),
+    sdfg_names: typing.Optional[typing.List[str]] = None,
 ):
     compile_flags = flags.replace("--shared", "").replace("-shared", "")
     # nvcc-only flags that g++ doesn't understand. When routing a .cpp
@@ -266,6 +277,20 @@ def _compile_and_link(
     arch_match = _re.search(r"-arch=sm_\w+", compile_flags)
     arch_flag = arch_match.group(0) if arch_match else ""
 
+    # Per-variant partial-link + symbol localization. Each variant's
+    # ``.cpp.o`` and ``_cuda.o`` carry duplicate definitions of DaCe-
+    # internal CUDA helpers (``__dace_init_cuda``,
+    # ``__dace_runkernel_*``, per-map kernel mangled names, …). To
+    # link N variants into a single executable we ``ld -r`` each
+    # variant's pair into one ``<sdfg>_merged.o`` and then run
+    # ``objcopy --keep-global-symbol`` to keep only the four public
+    # names DaCe exposes per SDFG (``__dace_init_<sdfg>``,
+    # ``__dace_exit_<sdfg>``, ``__program_<sdfg>``,
+    # ``__program_<sdfg>_internal``). Everything else becomes
+    # local-only and the multi-variant link cleans up.
+    if gpu and sdfg_names:
+        objects = _localize_internal_symbols(objects, sdfg_names)
+
     link_flags = ""
     if lib:
         link_flags = "-shared" if (AMD or link_cc == _cxx()) else "--shared -Xcompiler=-fPIC"
@@ -280,6 +305,116 @@ def _compile_and_link(
     ret = subprocess.run(link_cmd, shell=True)
     if ret.returncode != 0:
         raise RuntimeError(f"FAILED: {link_cmd}")
+
+
+def _localize_internal_symbols(
+    objects: typing.List[str], sdfg_names: typing.List[str],
+) -> typing.List[str]:
+    """Per-SDFG: partial-link the ``.cpp.o`` + ``_cuda.o`` into
+    ``<sdfg>_merged.o``, then run ``objcopy --localize-symbol`` to
+    downgrade just the symbols that COLLIDE across variants. Symbols
+    that aren't multi-defined keep their original visibility, so the
+    linker's section-gc doesn't discard NVTX init / fatbin / nvcc
+    auxiliary sections that aren't actually duplicated.
+
+    Returns a new ``objects`` list with each variant's pair replaced
+    by the merged object."""
+    if len(sdfg_names) <= 1:
+        return list(objects)
+
+    # Step 1: ld -r every variant's pair.
+    merged_paths: typing.Dict[str, str] = {}
+    for sdfg_name in sdfg_names:
+        cpu_obj = next(
+            (o for o in objects
+             if o.endswith(f'/{sdfg_name}.o') and '/src/cpu/' in o),
+            None)
+        cuda_obj = next(
+            (o for o in objects
+             if o.endswith(f'/{sdfg_name}_cuda.o') and '/src/cuda/' in o),
+            None)
+        if cpu_obj is None or cuda_obj is None:
+            continue
+        merged = os.path.join(os.path.dirname(cpu_obj),
+                               f'{sdfg_name}_merged.o')
+        ld_cmd = f"ld -r {cpu_obj} {cuda_obj} -o {merged}"
+        ret = subprocess.run(ld_cmd, shell=True)
+        if ret.returncode != 0:
+            raise RuntimeError(f"FAILED: {ld_cmd}")
+        merged_paths[sdfg_name] = merged
+
+    # Step 2: collect the set of GLOBAL ``T`` (text) symbols defined in
+    # each merged object. Anything that appears in more than one of
+    # them is a collision -- localize it in every merged object.
+    import collections as _collections
+    sym_count = _collections.Counter()
+    sym_per_obj: typing.Dict[str, typing.Set[str]] = {}
+    for sdfg_name, merged in merged_paths.items():
+        defined = set()
+        nm = subprocess.run(f'nm --defined-only {merged}', shell=True,
+                             capture_output=True, text=True)
+        for line in (nm.stdout or '').splitlines():
+            parts = line.strip().split(None, 2)
+            if len(parts) >= 3 and parts[1] in ('T', 'D', 'B', 'R'):
+                defined.add(parts[2])
+        sym_per_obj[sdfg_name] = defined
+        for s in defined:
+            sym_count[s] += 1
+
+    # Symbols that appear in 2+ merged objects.
+    colliders = {s for s, c in sym_count.items() if c >= 2}
+    # The 4 public per-SDFG entry points are unique by construction
+    # (they include the SDFG name); they can't be in colliders, so
+    # nothing to do for those.
+    if not colliders:
+        out = list(objects)
+        for sdfg_name, merged in merged_paths.items():
+            cpu_obj = next(o for o in objects
+                            if o.endswith(f'/{sdfg_name}.o')
+                            and '/src/cpu/' in o)
+            cuda_obj = next(o for o in objects
+                            if o.endswith(f'/{sdfg_name}_cuda.o')
+                            and '/src/cuda/' in o)
+            out = [o for o in out if o != cpu_obj and o != cuda_obj]
+            out.append(merged)
+        return out
+
+    # Step 3: objcopy --localize-symbol per colliding symbol per
+    # merged object. Localizing in EVERY variant means each variant
+    # carries a private copy that resolves only intra-object;
+    # cross-object references already bound through ``ld -r`` stay
+    # internal too. Public per-SDFG entries (``__dace_init_<name>``,
+    # ``__program_<name>``, ...) aren't colliders so stay global.
+    for sdfg_name, merged in merged_paths.items():
+        # Only localize symbols actually defined in THIS merged
+        # object (objcopy errors on missing names).
+        local_set = colliders & sym_per_obj[sdfg_name]
+        if not local_set:
+            continue
+        # Pass via -L=name; objcopy's CLI accepts repeated --localize-
+        # symbol flags or a --localize-symbols=file. Use a temp file
+        # for cleanliness.
+        listfile = merged + '.localize.txt'
+        with open(listfile, 'w') as f:
+            for s in sorted(local_set):
+                f.write(s + '\n')
+        objcopy_cmd = f"objcopy --localize-symbols={listfile} {merged}"
+        ret = subprocess.run(objcopy_cmd, shell=True)
+        if ret.returncode != 0:
+            raise RuntimeError(f"FAILED: {objcopy_cmd}")
+
+    # Step 4: build the replacement object list.
+    out = list(objects)
+    for sdfg_name, merged in merged_paths.items():
+        cpu_obj = next(o for o in objects
+                        if o.endswith(f'/{sdfg_name}.o')
+                        and '/src/cpu/' in o)
+        cuda_obj = next(o for o in objects
+                        if o.endswith(f'/{sdfg_name}_cuda.o')
+                        and '/src/cuda/' in o)
+        out = [o for o in out if o != cpu_obj and o != cuda_obj]
+        out.append(merged)
+    return out
 
 
 # ─── Main entry point ────────────────────────────────────────────────
@@ -311,26 +446,50 @@ def compile_if_propagated_sdfgs(
     macro in ``include/call_velocity.h`` (the signature can drift between
     branches, so regenerating here keeps ``main.cpp`` in sync).
     """
-    dace.Config.set("compiler", "cuda", "max_concurrent_streams", value="1")
+    # Compute the flags ONCE so the DaCe codegen path and the outer
+    # ``_compile_and_link`` invocation see identical compile arguments.
+    # Drift between the two used to manifest as numerics differing
+    # between DaCe-built ``sdfg.compile()`` artefacts and the merged
+    # multi-variant binary -- because nvcc/hipcc was invoked with
+    # different ``--fmad`` / ``--use_fast_math`` / ``--offload-arch``
+    # settings on each path.
+    flags = _get_flags(gpu, release, lib, debuginfo)
 
-    if AMD:
-        dace.config.Config.set("compiler", "cuda", "backend", value="hip")
-        dace.config.Config.set("compiler", "cuda", "path", value="/opt/rocm")
-        dace.config.Config.set("compiler", "cuda", "hip_arch", value="gfx942")
-        dace.config.Config.set("compiler", "cuda", "default_block_size", value="32,16,1")
-        dace.config.Config.set(
-            "compiler", "cuda", "hip_args",
-            value=(
-                "--offload-arch=gfx942 "
-                "-mllvm -amdgpu-early-inline-all=true "
-                "-munsafe-fp-atomics "
-                "-ffp-contract=fast "
-                "-fPIC -O3 -ffast-math "
-                "-Wno-unused-parameter -Wno-ignored-attributes -Wno-unused-result"
-            ),
-        )
-    else:
-        dace.config.Config.set("compiler", "cuda", "default_block_size", value="32,16,1")
+    # -1 = default-stream mode: DaCe creates no streams and every
+    # kernel launch / async copy takes nullptr.
+    dace.Config.set("compiler", "cuda", "max_concurrent_streams", value="-1")
+
+    # Pin the legacy CUDA codegen. The new-gpu-codegen-dev branch ships
+    # an ``experimental`` codegen that's the default but is producing
+    # wrong numerics on the velocity SDFGs; ``legacy`` is the stable
+    # path. Guarded for older DaCe branches that don't have the key.
+    try:
+        dace.Config.set("compiler", "cuda", "implementation", value="legacy")
+    except (KeyError, ValueError):
+        pass
+
+    # Block dimensions: caller can override via ``_TBLOCK_DIMS`` env (the
+    # platform-setup scripts use ``32,4,1`` on Beverin / MI300A and
+    # ``32,16,1`` on Daint / GH200). Default matches the historical
+    # ``32,16,1`` so behavior is unchanged when the env is unset.
+    block_dims = os.getenv("_TBLOCK_DIMS", "32,16,1")
+    dace.Config.set("compiler", "cuda", "default_block_size", value=block_dims)
+
+    if gpu and AMD:
+        dace.Config.set("compiler", "cuda", "backend", value="hip")
+        dace.Config.set("compiler", "cuda", "path", value="/opt/rocm")
+        dace.Config.set("compiler", "cuda", "hip_arch", value="gfx942")
+        dace.Config.set("compiler", "cuda", "hip_args", value=flags)
+    elif gpu:
+        # NVIDIA: feed the same flag string to DaCe's CUDA codegen.
+        dace.Config.set("compiler", "cuda", "args", value=flags)
+
+    # CPU compile path (host main / non-GPU SDFGs) goes through
+    # ``compiler.cpu.args``. Compute via _get_flags(gpu=False) so the
+    # debuginfo / release / lib branches stay in sync with the GPU
+    # path's matching switch.
+    cpu_flags = _get_flags(False, release, lib, debuginfo)
+    dace.Config.set("compiler", "cpu", "args", value=cpu_flags)
 
     sources: typing.List[str] = list(extra_sources) if extra_sources is not None else []
     headers = [f"-I{d}" for d in (extra_include_dirs or ["include"])]
@@ -380,7 +539,8 @@ def compile_if_propagated_sdfgs(
     elif not lib:
         sources.append("main_gpu.cpp" if gpu else "main.cpp")
 
-    flags = _get_flags(gpu, release, lib, debuginfo)
+    # ``flags`` already computed at the top of this function and pushed
+    # into dace.Config so the codegen path uses identical arguments.
     dace_include = os.path.dirname(dace.__file__) + "/runtime/include/"
     includes = " ".join(
         [f"-I{sdfg.build_folder}/include" for sdfg in sdfgs]
@@ -399,4 +559,5 @@ def compile_if_propagated_sdfgs(
     print(f"Output: {output}")
     print(f"Sources: {len(sources)} files\n")
 
-    _compile_and_link(sources, includes, flags, output, gpu, lib)
+    _compile_and_link(sources, includes, flags, output, gpu, lib,
+                      sdfg_names=[s.name for s in sdfgs])

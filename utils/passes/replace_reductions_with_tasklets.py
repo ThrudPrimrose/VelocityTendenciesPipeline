@@ -143,7 +143,9 @@ def _rewrite_one(state, red: Reduce):
                  and family in ('max', 'sum', 'any'))
 
     if backend == 'gpu':
-        stream_arg = ', __state->gpu_context->streams[0]'
+        # Default stream: DaCe is pinned to max_concurrent_streams=-1,
+        # so no context streams exist and every launch takes nullptr.
+        stream_arg = ', nullptr'
     else:
         stream_arg = ''
 
@@ -379,8 +381,7 @@ def _insert_post_state_sync(g: SDFG, producer_state) -> None:
     sync_state.add_tasklet(
         name='_reduce_async_sync',
         inputs={}, outputs={},
-        code=('DACE_GPU_CHECK('
-              'gpuStreamSynchronize(__state->gpu_context->streams[0]));'),
+        code='DACE_GPU_CHECK(gpuStreamSynchronize(nullptr));',
         language=dtypes.Language.CPP,
         side_effects=True,
     )

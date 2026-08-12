@@ -1,21 +1,22 @@
-"""Stage 5: post-offload neighborhood-list / block-array compression.
+"""Stage 5: neighborhood-list / block-array compression.
 
-Reads ``codegen/stage4/<name>.sdfgz`` (GPU-offloaded), applies up to
-three compression call sites backed by two passes, saves to
-``codegen/stage5/<name>.sdfgz``, and compiles with the GPU toolchain.
+This stage carries **only** the velocity-tendencies compression work.
+Every other GPU-side fix (offload, async reductions, persistent
+transient lifetimes, body timer instrumentation) lives in stage 4 so
+the stage-4 binary inherits them whether or not stage 5 runs.
 
-Call sites (all share one precondition insertion):
+Three compression call sites:
 
 1. :func:`fold_array_access_to_expression` on the ``*_blk`` arrays
-   known to be single-valued (``arr[..., jb, ...] == jb`` on
-   single-block patches). Every subscript access is rewritten to the
-   middle index, arrays are dropped.
+   known to be single-valued under the runtime precondition
+   ``nblks_c == 1 && nblks_v == 1``. Every subscript access is
+   rewritten to the literal 1 (Fortran 1-indexed block ID); arrays
+   themselves stay in the function signature, just unused.
 2. :func:`generate_compressed_variant` on the ``*_idx`` arrays with
-   ``uint16`` under the bound
-   ``nproma * nblks_* < 65536``. *(scaffolded; Pass 2 pending)*
+   ``uint16`` under the bound ``nproma * nblks_* < 65536``. Adds a
+   compressed clone of the body and dispatches at runtime.
 3. :func:`generate_compressed_variant` on the multi-valued ``*_blk``
    arrays with ``uint8`` under the bound ``nblks_* < 256``.
-   *(scaffolded; Pass 2 pending)*
 
 Run:
     python -m utils.stages.stage5              # optimise + compile
@@ -31,7 +32,6 @@ os.environ.setdefault("__DACE_NO_SYNC", "1")
 
 import dace
 
-from dace.transformation.passes.simplify_expressions import simplify_expressions
 from utils.passes.compress_indices import (
     SymbolicConstraint,
     fold_array_access_to_expression,
@@ -111,22 +111,6 @@ def optimization_action(sdfg: dace.SDFG) -> dace.SDFG:
               f"eliminated {eliminated} blk array(s)")
     sdfg.validate()
 
-    # The fold leaves interstate-edge assignments with fresh symbolic
-    # expressions (``-SA + jb + ...``) that stage 2's simplify_expressions
-    # would fold further. Re-run sympy-simplify so the stage-5 output
-    # is in the same canonical form as every earlier stage -- but save
-    # every interstate-edge value first and restore any that got
-    # corrupted to ``oo`` / ``-oo`` (sympy overflows ``-1e309`` etc.
-    # to infinity, which isn't a valid symbol downstream).
-    snapshot = _snapshot_interstate_assignments(sdfg)
-    rewritten = simplify_expressions(sdfg)
-    repaired = _repair_infinity_assignments(sdfg, snapshot)
-    if rewritten:
-        print(f"Stage #{STAGE_ID}: simplify_expressions rewrote "
-              f"{rewritten} expression(s)"
-              + (f" ({repaired} ∞-corrupted reverted)" if repaired else ""))
-    sdfg.validate()
-
     # Call 2: neighbor-index uint16 demotion.
     generate_compressed_variant(
         sdfg, array_names=_IDX_ARRAYS_GPU,
@@ -143,142 +127,7 @@ def optimization_action(sdfg: dace.SDFG) -> dace.SDFG:
         name_suffix='uint8')
     sdfg.validate()
 
-    # Host-side timer around the body. Start immediately after the
-    # copy-in sync (the first point where every pre-body copy has
-    # completed), stop immediately before the copy-out (the last
-    # point before result streaming begins). Timing is accurate
-    # without a dedicated pre-stop sync because stage 5's body
-    # always contains a scalar-return reduction tasklet
-    # (``reduce_max_gpu`` for ``max_vcfl_dyn``) which itself
-    # synchronises stream 0; every earlier kernel on stream 0 is
-    # therefore complete before the reduction returns, and no
-    # further kernel can slip past the host-side stop.
-    _insert_body_timer(sdfg)
-    sdfg.validate()
-
     return sdfg
-
-
-def _insert_body_timer(sdfg: dace.SDFG) -> None:
-    """Wrap the stage-5 body with two host-side timer tasklets.
-
-    Start state is inserted as a successor of ``_sync_after_copy_in``;
-    stop state as a predecessor of ``_gpu_to_cpu_copy_out``. Both
-    tasklets are side-effects-only, no inputs/outputs. The measured
-    interval is printed per invocation via ``printf`` -- downstream
-    callers can switch to an accumulator by subclassing or editing
-    the printf line.
-    """
-    from dace import dtypes as _dtypes
-    from dace.properties import CodeBlock as _CodeBlock
-
-    # One-shot global state kept in a file-scope static. Using C++
-    # ``<chrono>`` so the timer is portable across host toolchains.
-    existing = sdfg.global_code.get('frame')
-    prior = existing.code if existing is not None \
-        and isinstance(existing.code, str) else ''
-    sdfg.global_code['frame'] = _CodeBlock(
-        prior
-        + '#include <chrono>\n'
-          '#include <cstdio>\n'
-          'static std::chrono::steady_clock::time_point _stage5_t0;\n',
-        _dtypes.Language.CPP)
-
-    # Find anchor states. Use labels the OffloadVelocityToGPU pass
-    # writes; fall back to the first / last state if the labels are
-    # missing (e.g. when stage 5 is applied to a non-velocity SDFG).
-    sync_in = _find_state_by_label(sdfg, '_sync_after_copy_in') \
-        or sdfg.start_state
-    copy_out = _find_state_by_label(sdfg, '_gpu_to_cpu_copy_out')
-    if copy_out is None:
-        ends = [s for s in sdfg.nodes() if sdfg.out_degree(s) == 0]
-        copy_out = ends[-1] if ends else None
-
-    # Start: new state immediately after the post-copy-in sync.
-    start_state = sdfg.add_state_after(
-        sync_in, label='_stage5_timer_start')
-    start_state.add_tasklet(
-        name='_stage5_timer_start',
-        inputs={}, outputs={},
-        code='_stage5_t0 = std::chrono::steady_clock::now();',
-        language=_dtypes.Language.CPP,
-        side_effects=True,
-    )
-
-    # Stop: new state immediately before copy-out.
-    if copy_out is not None:
-        stop_state = sdfg.add_state_before(
-            copy_out, label='_stage5_timer_stop')
-        stop_state.add_tasklet(
-            name='_stage5_timer_stop',
-            inputs={}, outputs={},
-            code=(
-                'auto _stage5_t1 = std::chrono::steady_clock::now();\n'
-                'std::chrono::duration<double, std::milli> _stage5_dt = '
-                '_stage5_t1 - _stage5_t0;\n'
-                'std::printf("stage5 body: %.6f ms\\n", _stage5_dt.count());'
-            ),
-            language=_dtypes.Language.CPP,
-            side_effects=True,
-        )
-
-
-def _find_state_by_label(sdfg: dace.SDFG, label: str):
-    for block in sdfg.nodes():
-        if isinstance(block, dace.SDFGState) and block.label == label:
-            return block
-    return None
-
-
-def _snapshot_interstate_assignments(sdfg: dace.SDFG):
-    """Save every interstate-edge assignment / condition value as a
-    ``(edge_id, key, value_str)`` tuple. Used to roll back
-    sympy-induced ``oo`` corruption after simplify_expressions."""
-    from dace.properties import CodeBlock
-    snap = {}
-    for e in sdfg.all_interstate_edges():
-        eid = id(e)
-        snap[eid] = {
-            'assignments': {
-                k: (v.as_string if isinstance(v, CodeBlock) else str(v))
-                for k, v in e.data.assignments.items()
-            },
-            'condition': (e.data.condition.as_string
-                          if e.data.condition is not None else None),
-            'edge': e,
-        }
-    return snap
-
-
-def _repair_infinity_assignments(sdfg: dace.SDFG, snapshot) -> int:
-    """Walk interstate edges; for any assignment / condition whose
-    string contains ``oo`` as a standalone token (sympy's infinity),
-    restore the pre-simplify string from ``snapshot``. Returns the
-    number of repairs."""
-    import re as _re
-    from dace.properties import CodeBlock
-    inf_re = _re.compile(r'(?<![A-Za-z_])[+-]?oo(?![A-Za-z_])')
-    repaired = 0
-    for e in sdfg.all_interstate_edges():
-        prior = snapshot.get(id(e))
-        if prior is None:
-            continue
-        for k, v in list(e.data.assignments.items()):
-            v_str = v.as_string if isinstance(v, CodeBlock) else str(v)
-            if inf_re.search(v_str):
-                orig = prior['assignments'].get(k)
-                if orig is None:
-                    continue
-                e.data.assignments[k] = (
-                    CodeBlock(orig) if isinstance(v, CodeBlock) else orig)
-                repaired += 1
-        if e.data.condition is not None:
-            cs = e.data.condition.as_string
-            if inf_re.search(cs) and prior['condition'] is not None:
-                e.data.condition = CodeBlock(prior['condition'],
-                                             e.data.condition.language)
-                repaired += 1
-    return repaired
 
 
 def main():

@@ -4,6 +4,14 @@ Walks the SDFG tree and rewrites:
   - ``sdfg.symbols`` — any symbol typed as int64/uint64.
   - Array descriptors' ``dtype``.
   - ``NestedSDFG`` in/out connector types.
+  - Interstate-edge-assigned symbols that are otherwise undeclared.
+    DaCe's codegen infers their type via ``InterstateEdge.new_symbols``,
+    and a literal like ``lhs = 1`` lands on ``int64`` (Python ``int``
+    default). Left unfixed, they surface in the emitted C++ as
+    ``int64_t lhs;`` local declarations and ``int64_t`` parameter types
+    in generated ``__dace_runkernel_*`` prototypes. We register them in
+    ``sdfg.symbols`` as ``int32`` so the framecode's interstate-symbol
+    pass picks up the narrower type.
 
 Fixes the ``conversion from 'long int' to 'int' may change value`` warnings
 emitted by the C++ toolchain when DaCe's default 64-bit loop / map params
@@ -43,6 +51,34 @@ def int64_to_int32(sdfg: dace.SDFG) -> int:
                     if new is not None:
                         node.out_connectors[conn] = new
                         count += 1
+        count += _register_undeclared_interstate_symbols(g)
+    return count
+
+
+def _register_undeclared_interstate_symbols(g: dace.SDFG) -> int:
+    """Declare any interstate-assigned symbol not in ``g.symbols``/``g.arrays``.
+
+    Only int64/uint64 inferences are registered (as int32/uint32); non-int
+    inferences (e.g. a ``tmp_call`` carrying a double) are left to the
+    normal codegen path.
+    """
+    count = 0
+    declared_seed = dict(g.symbols)
+    declared_seed.update({k: v.dtype for k, v in g.arrays.items()})
+    for e in g.all_interstate_edges():
+        try:
+            inferred = e.data.new_symbols(g, declared_seed)
+        except Exception:
+            continue
+        for lhs, t in inferred.items():
+            if lhs in g.symbols or lhs in g.arrays:
+                continue
+            narrowed = _I64_TO_I32.get(t)
+            if narrowed is None:
+                continue
+            g.symbols[lhs] = narrowed
+            declared_seed[lhs] = narrowed
+            count += 1
     return count
 
 

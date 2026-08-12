@@ -27,8 +27,9 @@ velocity_per
 *.dylib
 *.dSYM/
 
-# Data (symlinked in from icon-artifacts)
-data_r02b05
+# Data (symlinked in from icon-artifacts) -- track the folder structure but
+# ignore the actual ``.data`` payload files inside it.
+*.data
 gotwant/
 
 # Editor / IDE

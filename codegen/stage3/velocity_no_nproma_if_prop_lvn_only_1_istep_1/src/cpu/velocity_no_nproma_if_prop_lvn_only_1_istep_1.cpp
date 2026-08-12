@@ -155,7 +155,7 @@ inline void loop_body_0_0_15(velocity_no_nproma_if_prop_lvn_only_1_istep_1_state
     double tmp_call_1;
     int i_startidx_in_var_91_3;
     int i_endidx_in_var_92_3;
-    int64_t i_startidx_var_148;
+    int i_startidx_var_148;
     int i_endidx_var_149;
 
 
@@ -534,7 +534,7 @@ inline void reduce_20_1_19(velocity_no_nproma_if_prop_lvn_only_1_istep_1_state_t
 inline void loop_body_0_6_0(velocity_no_nproma_if_prop_lvn_only_1_istep_1_state_t *__state, double* __restrict__ __CG_p_int__m_e_bln_c_s, double* __restrict__ __CG_p_metrics__m_ddqz_z_half, double* __restrict__ __CG_p_metrics__m_wgtfac_c, int* __restrict__ __CG_p_patch__CG_cells__m_edge_blk, int* __restrict__ __CG_p_patch__CG_cells__m_edge_idx, int* __restrict__ __CG_p_patch__CG_cells__m_end_index, int* __restrict__ __CG_p_patch__CG_cells__m_start_index, double* __restrict__ __CG_p_prog__m_w, int* __restrict__ cfl_clipping, const double&  cfl_w_limit, const double&  dtime, double* __restrict__ z_kin_hor_e, double* __restrict__ z_w_concorr_me, double* __restrict__ __CG_p_diag__m_w_concorr_c, int* __restrict__ levmask, double* __restrict__ maxvcfl, double* __restrict__ vcflmax, double* __restrict__ z_ekinh, double* __restrict__ z_w_con_c, double* __restrict__ z_w_con_c_full, double* __restrict__ z_w_concorr_mc, int A_z_kin_hor_e_d_0, int A_z_kin_hor_e_d_1, int A_z_w_concorr_me_d_0, int A_z_w_concorr_me_d_1, int OA_z_kin_hor_e_d_0, int OA_z_kin_hor_e_d_1, int OA_z_kin_hor_e_d_2, int OA_z_w_concorr_me_d_0, int OA_z_w_concorr_me_d_1, int OA_z_w_concorr_me_d_2, int SOA_end_index_d_0_cells_p_patch_2, int SOA_start_index_d_0_cells_p_patch_2, int __CG_global_data__m_nproma, int __CG_p_diag__m_SA_w_concorr_c_d_0, int __CG_p_diag__m_SOA_w_concorr_c_d_0, int __CG_p_diag__m_SOA_w_concorr_c_d_1, int __CG_p_diag__m_SOA_w_concorr_c_d_2, int __CG_p_int__m_SA_e_bln_c_s_d_0, int __CG_p_int__m_SA_e_bln_c_s_d_1, int __CG_p_int__m_SOA_e_bln_c_s_d_0, int __CG_p_int__m_SOA_e_bln_c_s_d_1, int __CG_p_int__m_SOA_e_bln_c_s_d_2, int __CG_p_metrics__m_SA_ddqz_z_half_d_0, int __CG_p_metrics__m_SA_wgtfac_c_d_0, int __CG_p_metrics__m_SOA_ddqz_z_half_d_0, int __CG_p_metrics__m_SOA_ddqz_z_half_d_1, int __CG_p_metrics__m_SOA_ddqz_z_half_d_2, int __CG_p_metrics__m_SOA_wgtfac_c_d_0, int __CG_p_metrics__m_SOA_wgtfac_c_d_1, int __CG_p_metrics__m_SOA_wgtfac_c_d_2, int __CG_p_patch__m_nblks_c, int __CG_p_prog__m_SA_w_d_0, int __CG_p_prog__m_SOA_w_d_0, int __CG_p_prog__m_SOA_w_d_1, int __CG_p_prog__m_SOA_w_d_2, int _for_it_22, int i_endblk_var_147, int i_startblk_var_146, int nflatlev_jg, int nrdmax_jg) {
     int i_startidx_in_var_79_1;
     int i_endidx_in_var_80_1;
-    int64_t i_startidx_var_148;
+    int i_startidx_var_148;
     int i_endidx_var_149;
 
 
@@ -782,18 +782,18 @@ inline void loop_body_0_6_21(velocity_no_nproma_if_prop_lvn_only_1_istep_1_state
 
 inline void loop_body_42_3_16(velocity_no_nproma_if_prop_lvn_only_1_istep_1_state_t *__state, double* __restrict__ __CG_p_diag__m_vn_ie, double* __restrict__ __CG_p_diag__m_vt, double* __restrict__ __CG_p_int__m_c_lin_e, double* __restrict__ __CG_p_metrics__m_coeff_gradekin, double* __restrict__ __CG_p_metrics__m_ddqz_z_full_e, int* __restrict__ __CG_p_patch__CG_edges__m_cell_blk, int* __restrict__ __CG_p_patch__CG_edges__m_cell_idx, double* __restrict__ __CG_p_patch__CG_edges__m_f_e, int* __restrict__ __CG_p_patch__CG_edges__m_vertex_blk, int* __restrict__ __CG_p_patch__CG_edges__m_vertex_idx, const int&  ntnd, double* __restrict__ z_ekinh, double* __restrict__ z_kin_hor_e, double* __restrict__ z_w_con_c_full, double* __restrict__ zeta, double* __restrict__ __CG_p_diag__m_ddt_vn_apc_pc, int A_z_kin_hor_e_d_0, int A_z_kin_hor_e_d_1, int OA_z_kin_hor_e_d_0, int OA_z_kin_hor_e_d_1, int OA_z_kin_hor_e_d_2, int SA_cell_blk_d_1_edges_p_patch_4, int SA_cell_idx_d_1_edges_p_patch_4, int __CG_global_data__m_nproma, int __CG_p_diag__m_SA_ddt_vn_apc_pc_d_0, int __CG_p_diag__m_SA_ddt_vn_apc_pc_d_2, int __CG_p_diag__m_SA_vn_ie_d_0, int __CG_p_diag__m_SA_vt_d_0, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_0, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_1, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_2, int __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_3, int __CG_p_diag__m_SOA_vn_ie_d_0, int __CG_p_diag__m_SOA_vn_ie_d_1, int __CG_p_diag__m_SOA_vn_ie_d_2, int __CG_p_diag__m_SOA_vt_d_0, int __CG_p_diag__m_SOA_vt_d_1, int __CG_p_diag__m_SOA_vt_d_2, int __CG_p_int__m_SA_c_lin_e_d_0, int __CG_p_int__m_SA_c_lin_e_d_1, int __CG_p_int__m_SOA_c_lin_e_d_0, int __CG_p_int__m_SOA_c_lin_e_d_1, int __CG_p_int__m_SOA_c_lin_e_d_2, int __CG_p_metrics__m_SA_coeff_gradekin_d_0, int __CG_p_metrics__m_SA_coeff_gradekin_d_1, int __CG_p_metrics__m_SA_ddqz_z_full_e_d_0, int __CG_p_metrics__m_SOA_coeff_gradekin_d_0, int __CG_p_metrics__m_SOA_coeff_gradekin_d_1, int __CG_p_metrics__m_SOA_coeff_gradekin_d_2, int __CG_p_metrics__m_SOA_ddqz_z_full_e_d_0, int __CG_p_metrics__m_SOA_ddqz_z_full_e_d_1, int __CG_p_metrics__m_SOA_ddqz_z_full_e_d_2, int __CG_p_patch__m_nblks_e, int _for_it_47, int _for_it_48, int _for_it_49) {
     int tmp_index_679;
-    int64_t tmp_index_698;
-    int64_t tmp_index_700;
-    int64_t tmp_index_710;
-    int64_t tmp_index_712;
-    int64_t tmp_index_724;
-    int64_t tmp_index_726;
-    int64_t tmp_index_733;
-    int64_t tmp_index_735;
-    int64_t tmp_index_745;
-    int64_t tmp_index_747;
-    int64_t tmp_index_757;
-    int64_t tmp_index_759;
+    int tmp_index_698;
+    int tmp_index_700;
+    int tmp_index_710;
+    int tmp_index_712;
+    int tmp_index_724;
+    int tmp_index_726;
+    int tmp_index_733;
+    int tmp_index_735;
+    int tmp_index_745;
+    int tmp_index_747;
+    int tmp_index_757;
+    int tmp_index_759;
 
 
     tmp_index_679 = ((- __CG_p_diag__m_SOA_ddt_vn_apc_pc_d_3) + ntnd);
@@ -853,10 +853,10 @@ inline void loop_body_42_3_29(velocity_no_nproma_if_prop_lvn_only_1_istep_1_stat
     double tmp_call_17;
     double _if_cond_29;
     int _if_cond_28;
-    int64_t tmp_index_881;
-    int64_t tmp_index_883;
-    int64_t tmp_index_893;
-    int64_t tmp_index_895;
+    int tmp_index_881;
+    int tmp_index_883;
+    int tmp_index_893;
+    int tmp_index_895;
     int tmp_index_905;
     int tmp_index_909;
     int tmp_index_927;
@@ -867,10 +867,10 @@ inline void loop_body_42_3_29(velocity_no_nproma_if_prop_lvn_only_1_istep_1_stat
     int tmp_index_953;
     int tmp_index_963;
     int tmp_index_965;
-    int64_t tmp_index_976;
-    int64_t tmp_index_978;
-    int64_t tmp_index_985;
-    int64_t tmp_index_987;
+    int tmp_index_976;
+    int tmp_index_978;
+    int tmp_index_985;
+    int tmp_index_987;
 
 
     _if_cond_28 = (levelmask[_for_it_52] || levelmask[(_for_it_52 + 1)]);
@@ -1042,7 +1042,7 @@ inline void loop_body_0_7_0(velocity_no_nproma_if_prop_lvn_only_1_istep_1_state_
     int i_startidx_in_var_91_0;
     int i_endidx_in_var_92_0;
     int i_endidx_var_149;
-    int64_t i_startidx_var_148;
+    int i_startidx_var_148;
 
 
     i_startidx_in_var_91_0 = __CG_p_patch__CG_edges__m_start_index[(10 - SOA_start_index_d_0_edges_p_patch_4)];
