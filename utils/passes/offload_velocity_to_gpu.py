@@ -67,7 +67,7 @@ def OffloadVelocityToGPU(sdfg: SDFG, exclude_from_offload=()):
     # the velocity-owned reduction helpers (CPU / GPU launch / device
     # inline, chosen from detected storage + scope). Runs last so it
     # sees the final storage layout.
-    replace_reductions_with_tasklets(sdfg)
+    # replace_reductions_with_tasklets(sdfg)
     sdfg.validate()
 
 
